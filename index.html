@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="description" content="Alexey S. Omelchenko's personal website"/>
+    <meta name="author" content="Alexey S. Omelchenko"/>
+    <meta name="google-site-verification" content="rSjyvgkL1axuyImfyf_G55kB4L2oX8R6l9MFcTeVBxA" />
+    <title>Alexey S Omelchenko personal website</title>
+    <link rel="stylesheet" href="stylesheets/default.css"/>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-1.4.2.min.js"></script>
+    <script type="text/javascript" src="javascripts/behavior.js"></script>
+	<link type="text/css" rel="stylesheet" href="stylesheets/prettify.css" />    
+    <script type="text/javascript" src="javascripts/prettify/prettify.js"></script>
+    <!--[if IE]>
+	<script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+	<![endif]-->
+</head>
+<body onload="prettyPrint()">
+    <header id="logo">
+        <h1>Alexey Omelchenko's Pages</h1>
+    </header>
+    <nav id="main">
+        <ul>
+            <li><a class="selected" href="#">Home</a></li>
+            <li><a href="about.html">About</a></li>
+            <li><a href="resume.html">R&eacute;sum&eacute;</a></li>
+            <li><a href="contact.html">Contact</a></li>
+        </ul>
+    </nav>
+    <section id="intro">
+    	<header>
+    		<h2>Coding Notes</h2>
+        </header>
+    </section>
+    <div id="main" class="clear">
+        <section id="articles">
+            <article class="blogPost">
+                <header>
+                    <h2>unique_ptr vs auto_ptr</h2>
+                    <p>Posted on <time pubdate datetime="2013-04-08T23:31:45-09:00">April 8th 2013</time></p>
+                </header>
+				<p>C++11 standard now has a set of new smart pointers classes.
+				 unique_ptr is the one that makes auto_ptr deprecated. And there is a good
+				 reason. So what are the differences between these two classes from a user
+				 point or view?</p>
+				<p>auto_ptr was designed to serve two scenarios: take ownership of
+				 a dynamically allocated object and transfer the object by pointer
+				 in function return so that instead of<br/>
+				 <code>vector&lt;int>* createVector();</code> we can write<br/>
+				 <code>auto_ptr&lt; vector&lt;int> > createVector();</code> and make sure that in
+				 case of any exception all destructors will be called and the memory will be deallocated.</p>
+				<p>Another thing worth to mention is what auto_ptr was NOT designed for. It was
+				 not designed to store objects in a container or to make copies of itself. It was
+				 not designed to be very useful for controlling life time of objects inside other
+				 data types. But it is still possible to write code like this:</p>
+                <?prettify lang=cpp?>
+                <pre class="prettyprint">
+struct MyClass {
+    std::auto_ptr&lt;int> MyPtr;
+    MyClass() : MyPtr(new int) {}
+};</pre>
+                <p>but it leads to effects that are hardly useful. auto_ptr does not forbid copy
+				 construction or assignment, because C++ before C++11 did not have any facility to
+				 forbid it and solve the designed scenarios at the same time.</p>
+                <p>Now we have lvalue references and special new "move" semantics for operations
+				 with those references. All this maked possible to create another smart pointer
+				 that solves the initial scenarios but makes it hard to misuse it. <code>unique_ptr</code>
+				 does not have copy constructor or copy assignment operator. You still can transfer
+				 ownership of the pointer but it requires explicit statement:
+				 <code>unique_ptr&lt;int> myNewIntPtr = std::move(myOldIntPtr);</code></p>
+				<p>Two additional bonuses unique_ptr provides: ability to store pointer to an array
+				 (with access to elements by index through []) and possibility to specify, how
+				 the object has to be destroyed. The latter introduces one more scenario for the
+				 new smart pointer.</p>
+				<p>Consider some old-style C library with a function returning some old-style C string.
+				 The string is returned as <code>char*</code> allocated with <code>malloc</code>.
+				 auto_ptr&lt;char> is useless in this case - it only can destroy objects by calling standard
+				 delete. The default version of unique_ptr&lt;char> uses the same approach, because
+				 it uses default_delete&lt;char> as default the second template parameter. But we can
+				 specify another class.</p>
+				<p>unique_ptr is designed to have no overhead in size or runtime performance in comparison
+				 whith classic pointer. It depends on the deleter, so I am going to write some
+				 malloc_deleter without any overhead as well. And show its usage with the example
+				 of gcc type names unmangling.</p>
+                <pre class="prettyprint">
+#include &lt;memory>
+#include &lt;cstdlib>
+#include &lt;cxxabi.h>
+#include &lt;stdexcept>
+#include &lt;iostream>
+
+// The class does not have any member variables, therefore it does not
+// make any overhead in size or performance.
+template&lt;void (*fun)(void*)>
+struct fun_delete
+{
+    void operator () (void* p) { return (*fun)(p); }
+};
+
+typedef fun_delete&lt;std::free> malloc_delete;
+
+std::unique_ptr&lt;char, malloc_delete> demangle_type_name(const char* name)
+{
+    int status;
+    // The buffer has to be allocated with malloc or null. If null, then
+    // the result string is allocated with malloc.
+    std::unique_ptr&lt;char, malloc_delete> real_name (
+        abi::__cxa_demangle(name, 0, 0, &amp;status));
+
+    if( 0 != status )
+        throw std::runtime_error("Fail to demangle");
+
+    return real_name;
+}
+
+int main(int argc, char** argv)
+{
+    std::cout &lt;&lt; demangle_type_name(typeid(1)).get() &lt;&lt; std::endl;
+    std::cout &lt;&lt; demangle_type_name(typeid(2.0)).get() &lt;&lt; std::endl;
+    std::cout &lt;&lt; demangle_type_name(typeid("42")).get() &lt;&lt; std::endl;
+}
+</pre>
+            </article>
+        </section>
+        <aside>
+            <section>
+                <header>
+                    <h3>Useful Links</h3>
+                </header>
+                <nav id="categories">
+                    <ul>
+                        <li><a href="http://www.cplusplus.com">CPlusPlus.com</a></li>
+                        <li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3337.pdf">C++11 Standard</a></li>
+                        <li><a href="http://cppcms.com">C++ Web Framework</a></li>
+                        <li><a href="http://www.sugarcrm.com/community">SugarCRM Community</a></li>
+                        <li><a href="http://www.nas4free.org">NAS4Free/ZFS v28</a></li>
+                        <li><a href="http://www.netapp.com">NetApp</a></li>
+                    </ul>
+                </nav>
+            </section>
+        </aside>
+    </div>
+    <footer>
+    	<div class="clear">
+            <section id="about">
+                <header>
+                    <h3>About</h3>
+                </header>
+                <p>This is my personal web site. Here I experiment with HTML5 and CSS, so it is under construction. Taking into account my native language is C++, not HTML, the site might remain under construction for quite a while</p>
+            </section>
+            <section>
+                <header>
+                    <h3>News</h3>
+                </header>
+                <nav id="blogRoll">
+                    <ul>
+                        <li><a href="#">Under Construction</a></li>
+                    </ul>
+                </nav>
+            </section>
+            <section>
+                <header>
+                    <h3>Site Map</h3>
+                </header>
+                <nav id="siteMap">
+                    <ul>
+                        <li><a href="#">Home</a></li>
+                        <li><a href="about.html">About</a></li>
+                        <li><a href="resume.html">R&eacute;sum&eacute;</a></li>
+                        <li><a href="contact.html">Contact</a></li>
+                    </ul>
+                </nav>
+            </section>
+        </div>
+    </footer>
+</body>
+</html>

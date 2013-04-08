@@ -1,0 +1,5 @@
+﻿
+*.cpf
+*.cpfs
+.*
+!.gitignore
