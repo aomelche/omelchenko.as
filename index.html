@@ -36,8 +36,130 @@
         <section id="articles">
             <article class="blogPost">
                 <header>
+                    <h2>Minimalist GUI Server on CentOS 7</h2>
+                    <p>Posted on <time pubdate datetime="2015-02-22T14:52:50-05:00">February 22nd 2015</time></p>
+                </header>
+				<p>Most VPS hosting providers have CentOS platform as template. I have
+				 successfully run CentOS 6.5 on 512 MiB. CPU speed is not that important at this
+				 point.</p>
+				<p>Protect our server from SSH brute force attack. If we have installed iptables
+				 services, we can do: <pre class="prettyprint">
+# Clear everything from iptables
+iptables -F
+
+# Allow all packets for established connections
+# (match packets by state where state = ESTABLISHED,RELATED)
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Record IP address of all new attempts to connect to SSH(22) port
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
+
+# Match new attempts to connect to SSH port from IP address recorded in
+# last 180 seconds 4 times or more, update record and drop that attempt
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent \
+ --update --seconds 180 --hitcount 4 -j DROP
+
+# Allow all packets from loop-back interface - connections from localhost
+iptables -A INPUT -i lo -j ACCEPT
+
+# Allow PING requests
+iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+
+# Deny all other input and forward requests, allow all output
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+# Save firewall settings
+service iptables save
+</pre></p>
+				<p>Next I will "protect" the system from IPv6 attacks. Since I do not need any IPv6
+				 services, I will just disable IPv6 network services. The right way to do it on
+				 CentOS 7 is to open <code>/etc/sysctl.conf</code> and add the following lines:<pre>
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1</pre><br/>
+				 To apply changes and check the result: <pre>
+systemctl restart network
+ip addr show</pre></p>
+				<p>Change name of the server if you want. On CentOS 7 the right way to do it: <pre>
+hostnamectl set-hostname (--static|--transient|--pretty) <new name></pre></p>
+				<p>Setup local time zone. By default the timezone of VPS usually set up to the
+				 actual local timezone of the physical server. So if that is not what you want,
+				 replace symbolic link to <code>/usr/share/zoneinfo/&lt;whatever you want></code>
+				 at <code>/etc/localtime</code></p>
+				<p>Next I setup windows manager. To make true minimalist server I will use the
+				 simplest windows manager I know - <a href="http://dwm.suckless.org">dwm</a>.<br/>
+				 I cannot install it though yum, so I have to install prerequisites manually.
+				 One way to do it - install whole group for X Windows
+				 <pre>yum group install "X Windows System"</pre> but it will install a lot of
+				 unnecessary packages. So I prefer another trick. Install dmenu and xterm - I will
+				 need them anyway - and they are available through yum though dmenu is in EPEL
+				 repository. Enabling EPEL repository in CentOS 7 is simpler than ever:<pre>
+yum install epel-release</pre> Then I can install <code>dmenu</code> and <code>xterm</code> with all
+				 dependencies. Afrer that I have to install four remaining prerequisites for dwm:
+				 <code>libX11-devel</code>, <code>libXinerama-devel</code> and of course
+				 <code>gcc</code> and <code>make</code>. This installs only necessary packages from
+				 the repositories. We have to compile dwm. It does not have any external settings,
+				 so every customization is done through config.h file of its source code. So get
+				 the source code, unzip it, make and install. <pre>
+wget http://dl.suckless.org/dwm/dwm-6.0.tar.gz</pre></p>
+				<p>Now that I have necessary GUI packages installed, I will set up VNC server. <pre>
+yum install tigervnc-server</pre>I will need a user for VNC service.<pre>
+useradd someuser
+passwd someuser</pre>After that I will need to setup service for the user. Protocol VNC does not
+				 provide a way to chose a user name when you connect. Instead you have to chose
+				 service port and bind it to the user on the server settings. On CentOS 7 it is done
+				 through service files. I have to copy sample service file to the directory and then
+				 modify it.<pre>
+cp /lib/systemd/system/vncserver@.service \
+ /etc/systemd/system/vncserver@:1.service</pre>Here I chose
+				 port 5901 (display #1). Then I modify its content:<pre>
+
+[Unit]
+Description=Remote desktop service (VNC)
+After=syslog.target network.target
+
+[Service]
+Type=forking
+# Clean any existing files in /tmp/.X11-unix environment
+ExecStartPre=/bin/sh -c '/usr/bin/vncserver -kill %i > /dev/null 2>&1 || :'
+ExecStart=/sbin/runuser -l <strong>someuser</strong> -c "/usr/bin/vncserver %i \
+ -geometry 1200x650"
+PIDFile=/home/<strong>someuser</strong>/.vnc/%H%i.pid
+ExecStop=/bin/sh -c '/usr/bin/vncserver -kill %i > /dev/null 2>&1 || :'
+
+[Install]
+WantedBy=multi-user.target
+
+				</pre>Here we also can change display resolution. Next I have to setup VNC windows
+				 manager for VCN user.<pre>
+systemctl daemon-reload
+systemctl enable vncserver@:1
+su someuser
+
+# under someuser run server
+vncserver
+
+</pre>It will ask for new password. This password VNC server will ask for remote
+				 connection. Now we will modify <code>~/.vnc/xstartup</code> file to setup dwm. Here
+				 is an example of the file. <pre class="prettyprint">
+#!/bin/sh
+[ -x /etc/vnc/xstartup ] && exec /etc/vnc/xstartup
+[ -r $HOME/.Xresources ] && xrdb $HOME/.Xresources
+vncconfig -iconic &
+xterm -geometry 80x24+10+10 -ls -title "$VNCDESKTOP Desktop" &
+while true; do
+	dwm >>$HOME/.vnc/.dwm.log 2>&1
+done</pre>
+				 last cycle is to prevent "dead" screen when you suddenly close your dwm process.
+				 Here we can return to root session and restart VNC:<pre>
+systemctl restart vncserver@:1</pre></p>
+				<p>Now use your favorite VNC Viewer to connect.</p>
+            </article>
+            <article class="blogPost">
+                <header>
                     <h2>unique_ptr vs auto_ptr</h2>
-                    <p>Posted on <time pubdate datetime="2013-04-08T23:31:45-09:00">April 8th 2013</time></p>
+                    <p>Posted on <time pubdate datetime="2013-04-08T23:31:45+03:00">April 8th 2013</time></p>
                 </header>
 				<p>C++11 standard now has a set of new smart pointers classes.
 				 unique_ptr is the one that makes auto_ptr deprecated. And there is a good
