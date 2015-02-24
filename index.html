@@ -41,7 +41,8 @@
                 </header>
 				<p>Most VPS hosting providers have CentOS platform as template. I have
 				 successfully run CentOS 6.5 on 512 MiB. CPU speed is not that important at this
-				 point.</p>
+				 point. Here I will setup CentOS 7 - there are some changes in comparison with
+				 6.5 or earlier.</p>
 				<p>Protect our server from SSH brute force attack. If we have installed iptables
 				 services, we can do: <pre class="prettyprint">
 # Clear everything from iptables
@@ -59,6 +60,9 @@ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
 iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent \
  --update --seconds 180 --hitcount 4 -j DROP
 
+# Allow new SSH connections that were not matched above
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
 # Allow all packets from loop-back interface - connections from localhost
 iptables -A INPUT -i lo -j ACCEPT
 
@@ -69,10 +73,14 @@ iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT ACCEPT
+</pre>
+				 To save the policies we will need two packages and one command:
+<pre class="prettyprint">
+yum install iptables-services policycoreutils
 
 # Save firewall settings
 service iptables save
-</pre></p>
+</pre>				 without policycoreutils I have had an error: "restorecon: command not found"</p>
 				<p>Next I will "protect" the system from IPv6 attacks. Since I do not need any IPv6
 				 services, I will just disable IPv6 network services. The right way to do it on
 				 CentOS 7 is to open <code>/etc/sysctl.conf</code> and add the following lines:<pre>
