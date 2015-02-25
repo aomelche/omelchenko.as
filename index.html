@@ -87,6 +87,16 @@ hostnamectl set-hostname (--static|--transient|--pretty) <new name></pre></p>
 				 actual local timezone of the physical server. So if that is not what you want,
 				 replace symbolic link to <code>/usr/share/zoneinfo/&lt;whatever you want></code>
 				 at <code>/etc/localtime</code></p>
+				<p>Setup system locale, keyboard map etc. If you have minimal setup, something might
+				 be missing.<pre class="prettyprint">
+# List all supported locales
+localectl list-locales
+# Set locale
+localectl set-locale LANG=en_US.UTF-8
+# Install keyboard and tools for terminal fonts
+yum install kbd kbd-misc
+localectl set-keymap us
+</pre></p>
 				<p>Next I setup windows manager. To make true minimalist server I will use the
 				 simplest windows manager I know - <a href="http://dwm.suckless.org">dwm</a>.<br/>
 				 I cannot install it though yum, so I have to install prerequisites manually.
@@ -96,7 +106,9 @@ hostnamectl set-hostname (--static|--transient|--pretty) <new name></pre></p>
 				 need them anyway - and they are available through yum though dmenu is in EPEL
 				 repository. Enabling EPEL repository in CentOS 7 is simpler than ever:<pre>
 yum install epel-release</pre> Then I can install <code>dmenu</code> and <code>xterm</code> with all
-				 dependencies. Afrer that I have to install four remaining prerequisites for dwm:
+				 dependencies. Accept GPG key for EPEL with fingerpring
+				 <code>91e9 7d7c 4a5e 96f1 7f3e 888f 6a2f aea2 352c 64e5</code> Afrer that I have
+				 to install four remaining prerequisites for dwm:
 				 <code>libX11-devel</code>, <code>libXinerama-devel</code> and of course
 				 <code>gcc</code> and <code>make</code>. This installs only necessary packages from
 				 the repositories. We have to compile dwm. It does not have any external settings,
