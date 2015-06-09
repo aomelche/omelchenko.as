@@ -43,8 +43,10 @@
 				 successfully run CentOS 6.5 on 512 MiB. CPU speed is not that important at this
 				 point. Here I will setup CentOS 7 - there are some changes in comparison with
 				 6.5 or earlier.</p>
-				<p>Protect our server from SSH brute force attack. If we have installed iptables
-				 services, we can do: <pre class="prettyprint">
+				<p>To protect my server from SSH brute force attack I decided to use iptables
+				- it was preinstalled. But I had to install additional packages:
+				<code>iptables-services policycoreutils</code> in order to save the configuration.
+				To enable defence we can do: <pre class="prettyprint">
 # Clear everything from iptables
 iptables -F
 
@@ -65,6 +67,9 @@ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
 
 # Allow all packets from loop-back interface - connections from localhost
 iptables -A INPUT -i lo -j ACCEPT
+
+# Allow all packets to start new SSH connections not filtered before
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
 
 # Allow PING requests
 iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
