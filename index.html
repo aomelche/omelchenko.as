@@ -68,9 +68,6 @@ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
 # Allow all packets from loop-back interface - connections from localhost
 iptables -A INPUT -i lo -j ACCEPT
 
-# Allow all packets to start new SSH connections not filtered before
-iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
-
 # Allow PING requests
 iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
 
