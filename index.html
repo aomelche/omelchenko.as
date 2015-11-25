@@ -40,8 +40,8 @@
                     <p>Posted on <time pubdate datetime="2015-02-22T14:52:50-05:00">February 22nd 2015</time></p>
                 </header>
 				<p>Most VPS hosting providers have CentOS platform as template. I have
-				 successfully run CentOS 6.5 on 512 MiB. CPU speed is not that important at this
-				 point.</p>
+				 successfully run CentOS 6.5 with GUI on 512 MiB. CPU speed is not that important at
+				 this point. But this article is about CentOS 7.</p>
 				<p>Protect our server from SSH brute force attack. If we have installed iptables
 				 services, we can do: <pre class="prettyprint">
 # Clear everything from iptables
@@ -125,7 +125,7 @@ passwd someuser</pre>After that I will need to setup service for the user. Proto
 				 modify it.<pre>
 cp /lib/systemd/system/vncserver@.service \
  /etc/systemd/system/vncserver@:1.service</pre>Here I chose
-				 port 5901 (display #1). Then I modify its content:<pre>
+				 port 5901 (display #1). Then I modify its content:<pre class="prettyprint">
 
 [Unit]
 Description=Remote desktop service (VNC)
@@ -136,7 +136,7 @@ Type=forking
 # Clean any existing files in /tmp/.X11-unix environment
 ExecStartPre=/bin/sh -c '/usr/bin/vncserver -kill %i > /dev/null 2>&1 || :'
 ExecStart=/sbin/runuser -l <strong>someuser</strong> -c "/usr/bin/vncserver %i \
- -geometry 1200x650"
+ -geometry <strong>1280x950 -localhost -nolisten tcp</strong>"
 PIDFile=/home/<strong>someuser</strong>/.vnc/%H%i.pid
 ExecStop=/bin/sh -c '/usr/bin/vncserver -kill %i > /dev/null 2>&1 || :'
 
@@ -153,8 +153,8 @@ su someuser
 vncserver
 
 </pre>It will ask for new password. This password VNC server will ask for remote
-				 connection. Now we will modify <code>~/.vnc/xstartup</code> file to setup dwm. Here
-				 is an example of the file. <pre class="prettyprint">
+				 connection. Now we will modify <code>~/.vnc/xstartup</code> file to setup dwm. For
+				 CentOS 6.5 I used this code:<pre>
 #!/bin/sh
 [ -x /etc/vnc/xstartup ] && exec /etc/vnc/xstartup
 [ -r $HOME/.Xresources ] && xrdb $HOME/.Xresources
@@ -163,10 +163,39 @@ xterm -geometry 80x24+10+10 -ls -title "$VNCDESKTOP Desktop" &
 while true; do
 	dwm >>$HOME/.vnc/.dwm.log 2>&1
 done</pre>
-				 last cycle is to prevent "dead" screen when you suddenly close your dwm process.
-				 Here we can return to root session and restart VNC:<pre>
+				 last cycle was to prevent "dead" screen when you suddenly close your dwm process.</p>
+				 <p>But for CentOS 7 it does not work and leads to CPU overuse. Instead I leave the
+				 file untouched but have some modifications that will work for every user on the
+				 server. Return to root session. Open or create /etc/sysconfig/decktop and set
+				 PREFERRED variable:
+				 <pre class="prettyprint">
+#!/bin/sh
+PREFERRED=dwm</pre>
+				 VNC startup script will run /etc/X11/xinit/xinitrc which sources the desktop file
+				 and expect PREFERRED to be the command line of our windows manager.
+				 Now we can restart VNC:<pre>
 systemctl restart vncserver@:1</pre></p>
-				<p>Now use your favorite VNC Viewer to connect.</p>
+				<p>To use your favorite VNC Viewer first we need to close our root session and open
+				 someuser's one. We have setup tigervnc to work only with localhost connection so, we
+				 have to setup ssh tunneling. But for security it is disabled if it is open for root.
+				 In our case vncserver expects connections on 5901 port.</p>
+				<p>I do not like xterm default colors, so I opened
+				 <pre>/usr/share/X11/app-defaults/XTerm-color</pre> and modified it according to my
+				 preferences. The problem is CentOS 7 default scripts do not use it without
+				 additional workouts. I needed force xinitrc to load the resource: in
+				 <code>/etc/X11/xinit/xinit.d/</code> I created a file <code>xtermrc</code> for
+				 automatic startup with the following content:<pre class="prettyprint">
+xrdb -merge /usr/share/X11/app-defaults/XTerm-color</pre></p>
+				<p>For usable system we need good fonts. I use Liberation Sans, Terminus and Gohu.
+				 Liberation Sans and Terminus we can install through yum. Gohu is available on
+				 <a href="http://font.gohu.org/gohufont-2.0.tar.gz">http://font.gohu.org/gohufont-2.0.tar.gz</a>
+				 To install it just unpack it to <code>/usr/share/fonts/</code> Unfortunately,
+				 CentOS 7 did something undocumented to its font system. So in order to make the
+				 fonts available for <code>xterm</code> we need to add a symlink to the new folder
+				 as <code>/etc/X11/fontpath.d/gohufont:unscaled</code>. Some standard CentOS 7 fonts
+				 require the same manipulation too.</p>
+				<p>Now we can restart vncserver, connect, see good dwm interface, hit
+				 Alt+Shift+Enter to run xterm. Enjoy.</p>
             </article>
             <article class="blogPost">
                 <header>
@@ -265,7 +294,8 @@ int main(int argc, char** argv)
                     <ul>
                         <li><a href="http://www.cplusplus.com">CPlusPlus.com</a></li>
                         <li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3337.pdf">C++11 Standard</a></li>
-                        <li><a href="http://cppcms.com">C++ Web Framework</a></li>
+                        <li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3797.pdf">C++14 Standard</a></li>
+						<li><a href="http://cppcms.com">C++ Web Framework</a></li>
                         <li><a href="http://www.sugarcrm.com/community">SugarCRM Community</a></li>
                         <li><a href="http://www.nas4free.org">NAS4Free/ZFS v28</a></li>
                         <li><a href="http://www.netapp.com">NetApp</a></li>
