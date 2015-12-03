@@ -3,3 +3,4 @@
 *.cpfs
 .*
 !.gitignore
+!.readme.txt
