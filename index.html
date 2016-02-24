@@ -174,7 +174,7 @@ done</pre>
 				 last cycle was to prevent "dead" screen when you suddenly close your dwm process.</p>
 				 <p>But for CentOS 7 it does not work and leads to CPU overuse. Instead I leave the
 				 file untouched but have some modifications that will work for every user on the
-				 server. Return to root session. Open or create /etc/sysconfig/decktop and set
+				 server. Return to root session. Open or create /etc/sysconfig/desktop and set
 				 PREFERRED variable:
 				 <pre class="prettyprint">
 #!/bin/sh
@@ -191,7 +191,7 @@ systemctl restart vncserver@:1</pre></p>
 				 <pre>/usr/share/X11/app-defaults/XTerm-color</pre> and modified it according to my
 				 preferences. The problem is CentOS 7 default scripts do not use it without
 				 additional workouts. I needed force xinitrc to load the resource: in
-				 <code>/etc/X11/xinit/xinit.d/</code> I created a file <code>xtermrc</code> for
+				 <code>/etc/X11/xinit/xinitrc.d/</code> I created a file <code>xtermrc</code> for
 				 automatic startup with the following content:<pre class="prettyprint">
 xrdb -merge /usr/share/X11/app-defaults/XTerm-color</pre></p>
 				<p>For usable system we need good fonts. I use Liberation Sans, Terminus and Gohu.
