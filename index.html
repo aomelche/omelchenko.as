@@ -34,6 +34,35 @@
         <section id="articles">
             <article class="blogPost">
                 <header>
+                    <h2>Clipboard over VNC</h2>
+                    <p>Posted on <time pubdate datetime="2016-03-22T16:58:35-05:00">March 22nd 2016</time></p>
+                </header>
+                <p>When working with Linux over VNC one thing is important to understand about clipboard. VNC
+		 client and server do synchronize their clipboards, but in order to do that a separate
+		 application must be running: <pre>vncconfig</pre>So if your copy-paste does not work,
+		 check if VNC Config is still running.</p>
+		<p>When I use terminal, I prefer select-copy with left mouse click and paste with right mouse
+		 click. Unix gurus like to paste using their middle "button" or simulate it using simultaneous
+		 two button click when working on laptops. They say it is standard Unix style. Of course, they
+		 are right.</p>
+		 <p>I personally prefer to ignore the standard, because PuTTY-style clipboard operations much
+		 more ergonomic. First of all, there is no such thing in common mice as "middle button". It is
+		 a wheel. Is is not designed ergonomically to be pressed. It spins. And it scrolls the window.
+		 Scrolling is the last thing I want when I try to paste something. Middle "button" emulation
+		 using two button click is even less ergonomic. In order to do that on most devices you have
+		 to use two times more fingers than otherwise.</p>
+		<p>To make XTerm behave like PuTTY, we need to override the default translations in X resources.
+		 It can be done either on local level in ~/.Xresources or globally. I prefer to add to the
+		 XTerm defaults <code>/usr/share/X11/app-defaults/XTerm</code> the following lines:<pre class="prettyprint">
+*VT100.Translations: #override\
+    ~Ctrl ~Meta &lt;Btn3Down>:ignore() \n\
+    ~Meta &lt;Btn3Motion>:ignore() \n\
+    ~Ctrl ~Meta &lt;Btn3Up>:insert-selection(PRIMARY, CUT_BUFFER0)</pre></p>
+		<p>When working with files in Midnight Commander in order to use the terminal clipboard you
+		 have to press Shift button in addition to the mouse operations.</p>
+	    </article>
+            <article class="blogPost">
+                <header>
                     <h2>Minimalist GUI Server on CentOS 7</h2>
                     <p>Posted on <time pubdate datetime="2015-02-22T14:52:50-05:00">February 22nd 2015</time></p>
                 </header>
@@ -42,7 +71,7 @@
 				 point. Here I will setup CentOS 7 - there are some changes in comparison with
 				 6.5 or earlier.</p>
 				<p>To protect my server from SSH brute force attack I decided to use iptables
-				- it was preinstalled. But I had to install additional packages:
+				- it was pre-installed. But I had to install additional packages:
 				<code>iptables-services policycoreutils</code> in order to save the configuration.
 				To enable defence we can do: <pre class="prettyprint">
 # Clear everything from iptables
@@ -234,7 +263,7 @@ struct MyClass {
 				 construction or assignment, because C++ before C++11 did not have any facility to
 				 forbid it and solve the designed scenarios at the same time.</p>
                 <p>Now we have lvalue references and special new "move" semantics for operations
-				 with those references. All this maked possible to create another smart pointer
+				 with those references. All this makes possible to create another smart pointer
 				 that solves the initial scenarios but makes it hard to misuse it. <code>unique_ptr</code>
 				 does not have copy constructor or copy assignment operator. You still can transfer
 				 ownership of the pointer but it requires explicit statement:
@@ -252,7 +281,7 @@ struct MyClass {
 				<p>unique_ptr is designed to have no overhead in size or runtime performance in comparison
 				 whith classic pointer. It depends on the deleter, so I am going to write some
 				 malloc_deleter without any overhead as well. And show its usage with the example
-				 of gcc type names unmangling.</p>
+				 of gcc type names un-mangling.</p>
                 <pre class="prettyprint">
 #include &lt;memory>
 #include &lt;cstdlib>
