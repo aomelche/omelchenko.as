@@ -34,6 +34,147 @@
         <section id="articles">
             <article class="blogPost">
                 <header>
+                    <h2>Running CGI behind Nginx on CentOS 7</h2>
+                    <p>Posted on <time pubdate datetime="2016-05-04T12:49:18-05:00">May 4th 2016</time></p>
+                </header>
+                <p>Nginx does not have native support of CGI protocol, so I need something which will
+		 work as an application server. Maybe the most widespread approach is to put some Apache
+		 and use Nginx as a reverse proxy to forward HTTP requests. I do not like this idea
+		 because I try to avoid using Apache as long as possible. Another approach is to use native
+		 support of FastCGI and translate those requests to CGI scripts calls. I found an utility
+		 <a href="https://github.com/gnosek/fcgiwrap">fcgi_wrap</a> which does the translation,
+		 and it requires something that will launch it and keep it running, like
+		 <a href="http://redmine.lighttpd.net/projects/spawn-fcgi">spawn-fcgi</a>. None of them is
+		 included into CentOS 7 packages, so some people build them from source distribution.</p>
+		<p>I prefer to use another solution called uWCGI. It uses a fast binary uwsgi protocol and
+		 it looks very flexible and extensible. To serve CGI I need to install packages: nginx,
+		 uwsgi and uwsgi-plugin-common, which contains CGI plugin I need.<pre class="prettyprint">
+#The services can bee enabled as usual
+systemctl enable uwsgi
+systemctl enable nginx</pre></p>
+		<p>The default uWSGI configuration creates <code>/run/uwsgi</code> folder and runs the service
+		 as <code>uwsgi:uwsgi</code>. Default <code>/etc/uwsgi.ini</code> config is good enough.
+		 It runs master process called emperor and monitors a specified folder for INI
+		 files by mask. When a new INI appears the master process creates a worker called vassal
+		 according to the settings. When a configuration file disappears, the emperor terminates
+		 the worker. When a file is modified, the master process re-spawns the worker with new
+		 settings. Sounds appealing. The only thing I add here is creation of folder where all
+		 vassal logs will go.<pre class="prettyprint">
+[uwsgi]
+set-ph = user=uwsgi
+set-ph = group=uwsgi
+set-ph = runtime_dir=/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+
+master = true
+uid = %(user)
+gid = %(group)
+pidfile = %(runtime_dir)/uwsgi.pid
+emperor = /etc/uwsgi.d
+stats = %(runtime_dir)/stats.sock
+emperor-tyrant = true
+cap = setgid,setuid
+exec-as-root = mkdir -p %(log_dir)
+exec-as-root = chmod 770 %(log_dir)
+exec-as-root = chown %(user):%(group) %(log_dir)</pre></p>
+		<p>I want to run uwsgi master service as uwsgi user, but worker for processing CGI as
+		 nginx user. It is interesting part. Despite INI files can have parameter <code>uid</code>
+		 and <code>gid</code>, they are completely ignored if the master service is running
+		 in <code>emperor-tyrant</code> mode. The author's idea was to allow multiple users on
+		 the system to create their own worker processes putting INI files to the monitored
+		 directory. In this case you cannot use user or group which they want. It would be
+		 a security hole. Instead the master process runs slave processes under owner of
+		 the INI file credentials. That is why unlike most of configuration files under /etc
+		 I cannot keep root as the owner of those INI files. If the file's owner is root,
+		 there will be error messages in logs as follows:
+		 <br/><code>[emperor-tyrant] invalid permissions for vassal test.ini</code></p>
+		 <p>Here is my generic "vassal" configuration for CGI processing:<pre class="prettyprint">
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+set-ph = vhosts_dir=/var/www/vhosts
+
+uid = nginx
+gid = uwsgi
+plugins = cgi
+#http-socket = :9090
+#http-socket-modifier1 = 9
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = %(vhosts_dir)/%n
+cgi = %(vhosts_dir)/%n
+;cgi-allowed-ext = .cgi
+cgi-allowed-ext = .py
+logto = %(log_dir)/%n.log</pre></p>
+		<p>I still use <code>uid</code> and <code>gid</code> parameters so that I could run
+		it from command line as:
+		 <br/><code>uwsgi --ini test.ini</code>
+		 <br/>I prefer Unix sockets but it is supports also HTTP sockets. Make sure that nginx
+		 can read and write to the socket. For that there is <code>chmod-socket</code>
+		 parameter. For testing without Nginx I use http-socket parameter combined with
+		 <code>http-socket-modifier1</code> and magic number 9 wich corresponds to CGI protocol.
+		 Documentation to uWSGI proposes using <code>http</code> parameter instead of
+		 <code>http-socket</code>, but it does not work. Magic variable <code>%n</code>
+		 expands to name of current INI file without extension.</p>
+		<p>Configuration for Nginx looks like this:<pre class="prettyprint">
+server {
+    listen 80 default_server;
+    set $root_folder /var/www/vhosts/test;
+    set $error_folder /usr/share/nginx/html;
+
+    root $root_folder;
+    recursive_error_pages on;
+    error_page 404 /error-pages/404.html;
+    error_page 500 502 503 504 /error-pages/50x.html;
+
+    location ^~ /error-pages/ {
+        alias $error_folder/;
+    }
+
+    location ~* \.(png|jpg)$ {
+        root /;
+        try_files $root_folder$uri $error_folder$uri =404;
+    }
+
+    location / {
+        index index.py index.cgi index.html;
+        try_files $uri $uri/ =404;
+        if (-f $request_filename) {
+            error_page 418 = @cgi_backend;
+            return 418;
+        }
+    }
+
+    location @cgi_backend {
+        uwsgi_intercept_errors on;
+        include uwsgi_params;
+        uwsgi_modifier1 9;
+        uwsgi_pass unix:/var/run/uwsgi/test.sock;
+    }
+}</pre></p>
+		<p>I can avoid using <code>if</code> in the config passing all requests to the
+		 application server, even if the file does not exist. In that case uWSGI would
+		 return 404 status, but I prefer to do this check with Nginx. I do not know why
+		 there is no special instruction to use a named location
+		 inside if-statement, so the workaround is to return an error which is not reported
+		 back to the client and process it using <code>error_page</code>. I want Nginx to
+		 process all errors even if they come from CGI, for that I need to use
+		 <br/><code>uwsgi_intercept_errors on;</code>
+		 <br/>directive. Since I already have generated
+		 an error state when I jumped to @cgi_backend named location, I have to enable
+		 recursive errors processing
+		 <br/><code>recursive_error_pages on;</code>
+		 <br/>My error pages contain images, and those images I prefer to keep outside of
+		 the site document root, so I decided to tell Nginx to look for all images in
+		 two folders.</p>
+		 <p>Now I can put whatever CGI script I want to /var/www/vhosts/test/ and it will
+		 be executed.</p>
+	    </article>
+	    <article class="blogPost">
+                <header>
                     <h2>Clipboard over VNC</h2>
                     <p>Posted on <time pubdate datetime="2016-03-22T16:58:35-05:00">March 22nd 2016</time></p>
                 </header>
