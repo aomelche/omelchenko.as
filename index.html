@@ -32,6 +32,107 @@
     </section>
     <div id="main" class="clear">
         <section id="articles">
+	    <article class="blogPost">
+                <header>
+                    <h2>Git Server Over HTTPS</h2>
+                    <p>Posted on <time pubdate datetime="2016-05-11T15:39:16-05:00">May 11th 2016</time></p>
+                </header>
+		<p>I want to do some programming experiments with Git. For that purpose I need a test
+		 environment simple but similar enough to GitHub: the server shall be accessible over
+		 HTTPS, basic HTTP authentication shall be required for git push, read operations shall be
+		 permitted without an authentication. Web server shall be Nginx.</p>
+		<p>Git comes with HTTP protocol adapter implemented as CGI called <code>cit-http-backend
+		 </code> aka Smart HTTP transport. I install git from standard repository, create user and
+		 group for Git, create a directory for future repositories.
+		 <pre class="prettyprint">
+yum install git
+useradd --no-create-home --shell /sbin/nologin git
+usermod -G git -a nginx
+mkdir -p /srv/git
+chmod 750 /srv/git
+chown git:git /srv/git</pre></p>
+		<p>Now as <code>git</code> user I create a bare repository <code>test.git</code>
+		 <pre class="prettyprint">
+su -s /bin/bash git
+
+# execute next commands as git
+mkdir /srv/git/test.git
+cd /srv/git/test.git
+git init --bare
+
+# to allow anonymous push for testing purposes:
+git config http.receivepack true</pre></p>
+		<p>I already know how to run CGI scripts on Nginx through
+		 uWSGI, so I create a new worker for Git in uWSGI emperor directory <code>git.ini</code>
+		 set ownership as git:git and put the following content:<pre class="prettyprint">
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/%U
+
+uid = git
+gid = git
+plugins = cgi
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = /srv/git
+cgi = /usr/libexec/git-core/git-http-backend
+env = GIT_HTTP_EXPORT_ALL=yes
+env = GIT_PROJECT_ROOT=/srv/git
+logto = %(log_dir)/%n.log</pre></p>
+		<p>Here I put cgi command. If it points to a file, then this file will be run as CGI
+		 script for processing of all incoming requests. This is exactly what I need for Git.
+		 <br/>I put environment variables <code>GIT_HTTP_EXPORT_ALL</code> and
+		 <code>GIT_PROJECT_ROOT</code> here so there is no need to set them in Nginx
+		 configuration.
+		 <br/>For basic authentication I need a passwd file wich can be created by several
+		 utilities. The standard one is htpasswd. <code>htpasswd -c /srv/git/.htpasswd test</code>
+		 creates the file and adds the user test. To add other users run the same without
+		 <code>-c</code>. Now I am ready to configure Nginx:<pre class="prettyprint">
+server {
+    listen 443 ssl default_server;
+
+    ssl_certificate /etc/pki/tls/certs/my.crt;
+    ssl_certificate_key /etc/pki/tls/private/my.key;
+
+    set $root_folder /var/www/vhosts/example.com;
+    root $root_folder;
+
+    location / {
+        index index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ ^/git(/.*)$ {
+        location ~ ^/git(/.*/git-receive-pack)$ {
+            auth_basic "Restricted";
+            auth_basic_user_file /srv/git/.htpasswd;
+            include uwsgi_params;
+            uwsgi_modifier1 9;
+            uwsgi_param PATH_INFO $1;
+            uwsgi_param REMOTE_USER $remote_user;
+            uwsgi_pass unix:/run/uwsgi/git.sock;
+        }
+
+        include uwsgi_params;
+        uwsgi_modifier1 9;
+        uwsgi_param PATH_INFO $1;
+        uwsgi_pass unix:/run/uwsgi/git.sock;
+    }
+}</pre></p>
+		 <p>It is important to set <code>PATH_INFO</code> parameter. Without it Git will return
+		 500 error. Also is is important that <code>PATH_INFO</code> shall begin with
+		 <code>/</code> and contain path relative to Git root folder. It is where git-http-backend
+		 will look for the repositories.
+		 <br/>Here I put Git URL under /git folder so that it could be accessed as
+		 <code>https://example.com/git/test.git</code> from Git clients.
+		 <br/>Since I want authentication only for push commands, I have to distinguish all
+		 requests coming to <code>/git/...</code> For that I use nested locations directives.
+		 If request ends with <code>git-receive-pack</code> Nginx will request login and password.
+		 Otherwise not.</p>
+	    </article>
             <article class="blogPost">
                 <header>
                     <h2>Running CGI behind Nginx on CentOS 7</h2>
