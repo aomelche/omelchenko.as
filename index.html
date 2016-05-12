@@ -7,11 +7,11 @@
     <meta name="google-site-verification" content="rSjyvgkL1axuyImfyf_G55kB4L2oX8R6l9MFcTeVBxA" />
     <title>Alexey S Omelchenko personal website</title>
     <link type="text/css" rel="stylesheet" href="stylesheets/default.css"/>
-	<link type="text/css" rel="stylesheet" href="stylesheets/prettify.css" />    
+    <link type="text/css" rel="stylesheet" href="stylesheets/prettify.css" />    
     <script type="text/javascript" src="javascripts/prettify/prettify.js"></script>
     <!--[if lt IE 9]>
-		<script src="javascripts/html5shiv.min.js"></script>
-	<![endif]-->
+	<script src="javascripts/html5shiv.min.js"></script>
+    <![endif]-->
 </head>
 <body onload="prettyPrint()">
     <header id="logo">
@@ -32,7 +32,249 @@
     </section>
     <div id="main" class="clear">
         <section id="articles">
+	    <article class="blogPost">
+                <header>
+                    <h2>Git Server Over HTTPS</h2>
+                    <p>Posted on <time pubdate datetime="2016-05-11T15:39:16-05:00">May 11th 2016</time></p>
+                </header>
+		<p>I want to do some programming experiments with Git. For that purpose I need a test
+		 environment simple but similar enough to GitHub: the server shall be accessible over
+		 HTTPS, basic HTTP authentication shall be required for git push, read operations shall be
+		 permitted without an authentication. Web server shall be Nginx.</p>
+		<p>Git comes with HTTP protocol adapter implemented as CGI called <code>cit-http-backend
+		 </code> aka Smart HTTP transport. I install git from standard repository, create user and
+		 group for Git, create a directory for future repositories.
+		 <pre class="prettyprint">
+yum install git
+useradd --no-create-home --shell /sbin/nologin git
+usermod -G git -a nginx
+mkdir -p /srv/git
+chmod 750 /srv/git
+chown git:git /srv/git</pre></p>
+		<p>Now as <code>git</code> user I create a bare repository <code>test.git</code>
+		 <pre class="prettyprint">
+su -s /bin/bash git
+
+# execute next commands as git
+mkdir /srv/git/test.git
+cd /srv/git/test.git
+git init --bare
+
+# to allow anonymous push for testing purposes:
+git config http.receivepack true</pre></p>
+		<p>I already know how to run CGI scripts on Nginx through
+		 uWSGI, so I create a new worker for Git in uWSGI emperor directory <code>git.ini</code>
+		 set ownership as git:git and put the following content:<pre class="prettyprint">
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/%U
+
+uid = git
+gid = git
+plugins = cgi
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = /srv/git
+cgi = /usr/libexec/git-core/git-http-backend
+env = GIT_HTTP_EXPORT_ALL=yes
+env = GIT_PROJECT_ROOT=/srv/git
+logto = %(log_dir)/%n.log</pre></p>
+		<p>Here I put cgi command. If it points to a file, then this file will be run as CGI
+		 script for processing of all incoming requests. This is exactly what I need for Git.
+		 <br/>I put environment variables <code>GIT_HTTP_EXPORT_ALL</code> and
+		 <code>GIT_PROJECT_ROOT</code> here so there is no need to set them in Nginx
+		 configuration.
+		 <br/>For basic authentication I need a passwd file wich can be created by several
+		 utilities. The standard one is htpasswd. <code>htpasswd -c /srv/git/.htpasswd test</code>
+		 creates the file and adds the user test. To add other users run the same without
+		 <code>-c</code>. Now I am ready to configure Nginx:<pre class="prettyprint">
+server {
+    listen 443 ssl default_server;
+
+    ssl_certificate /etc/pki/tls/certs/my.crt;
+    ssl_certificate_key /etc/pki/tls/private/my.key;
+
+    set $root_folder /var/www/vhosts/example.com;
+    root $root_folder;
+
+    location / {
+        index index.html;
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ ^/git(/.*)$ {
+        location ~ ^/git(/.*/git-receive-pack)$ {
+            auth_basic "Restricted";
+            auth_basic_user_file /srv/git/.htpasswd;
+            include uwsgi_params;
+            uwsgi_modifier1 9;
+            uwsgi_param PATH_INFO $1;
+            uwsgi_param REMOTE_USER $remote_user;
+            uwsgi_pass unix:/run/uwsgi/git.sock;
+        }
+
+        include uwsgi_params;
+        uwsgi_modifier1 9;
+        uwsgi_param PATH_INFO $1;
+        uwsgi_pass unix:/run/uwsgi/git.sock;
+    }
+}</pre></p>
+		 <p>It is important to set <code>PATH_INFO</code> parameter. Without it Git will return
+		 500 error. Also is is important that <code>PATH_INFO</code> shall begin with
+		 <code>/</code> and contain path relative to Git root folder. It is where git-http-backend
+		 will look for the repositories.
+		 <br/>Here I put Git URL under /git folder so that it could be accessed as
+		 <code>https://example.com/git/test.git</code> from Git clients.
+		 <br/>Since I want authentication only for push commands, I have to distinguish all
+		 requests coming to <code>/git/...</code> For that I use nested locations directives.
+		 If request ends with <code>git-receive-pack</code> Nginx will request login and password.
+		 Otherwise not.</p>
+	    </article>
             <article class="blogPost">
+                <header>
+                    <h2>Running CGI behind Nginx on CentOS 7</h2>
+                    <p>Posted on <time pubdate datetime="2016-05-04T12:49:18-05:00">May 4th 2016</time></p>
+                </header>
+                <p>Nginx does not have native support of CGI protocol, so I need something which will
+		 work as an application server. Maybe the most widespread approach is to put some Apache
+		 and use Nginx as a reverse proxy to forward HTTP requests. I do not like this idea
+		 because I try to avoid using Apache as long as possible. Another approach is to use native
+		 support of FastCGI and translate those requests to CGI scripts calls. I found an utility
+		 <a href="https://github.com/gnosek/fcgiwrap">fcgi_wrap</a> which does the translation,
+		 and it requires something that will launch it and keep it running, like
+		 <a href="http://redmine.lighttpd.net/projects/spawn-fcgi">spawn-fcgi</a>. None of them is
+		 included into CentOS 7 packages, so some people build them from source distribution.</p>
+		<p>I prefer to use another solution called uWCGI. It uses a fast binary uwsgi protocol and
+		 it looks very flexible and extensible. To serve CGI I need to install packages: nginx,
+		 uwsgi and uwsgi-plugin-common, which contains CGI plugin I need.<pre class="prettyprint">
+#The services can bee enabled as usual
+systemctl enable uwsgi
+systemctl enable nginx</pre></p>
+		<p>The default uWSGI configuration creates <code>/run/uwsgi</code> folder and runs the service
+		 as <code>uwsgi:uwsgi</code>. Default <code>/etc/uwsgi.ini</code> config is good enough.
+		 It runs master process called emperor and monitors a specified folder for INI
+		 files by mask. When a new INI appears the master process creates a worker called vassal
+		 according to the settings. When a configuration file disappears, the emperor terminates
+		 the worker. When a file is modified, the master process re-spawns the worker with new
+		 settings. Sounds appealing. The only thing I add here is creation of folder where all
+		 vassal logs will go.<pre class="prettyprint">
+[uwsgi]
+set-ph = user=uwsgi
+set-ph = group=uwsgi
+set-ph = runtime_dir=/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+
+master = true
+uid = %(user)
+gid = %(group)
+pidfile = %(runtime_dir)/uwsgi.pid
+emperor = /etc/uwsgi.d
+stats = %(runtime_dir)/stats.sock
+emperor-tyrant = true
+cap = setgid,setuid
+exec-as-root = mkdir -p %(log_dir)
+exec-as-root = chmod 770 %(log_dir)
+exec-as-root = chown %(user):%(group) %(log_dir)</pre></p>
+		<p>I want to run uwsgi master service as uwsgi user, but worker for processing CGI as
+		 nginx user. It is interesting part. Despite INI files can have parameter <code>uid</code>
+		 and <code>gid</code>, they are completely ignored if the master service is running
+		 in <code>emperor-tyrant</code> mode. The author's idea was to allow multiple users on
+		 the system to create their own worker processes putting INI files to the monitored
+		 directory. In this case you cannot use user or group which they want. It would be
+		 a security hole. Instead the master process runs slave processes under owner of
+		 the INI file credentials. That is why unlike most of configuration files under /etc
+		 I cannot keep root as the owner of those INI files. If the file's owner is root,
+		 there will be error messages in logs as follows:
+		 <br/><code>[emperor-tyrant] invalid permissions for vassal test.ini</code></p>
+		 <p>Here is my generic "vassal" configuration for CGI processing:<pre class="prettyprint">
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+set-ph = vhosts_dir=/var/www/vhosts
+
+uid = nginx
+gid = uwsgi
+plugins = cgi
+#http-socket = :9090
+#http-socket-modifier1 = 9
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = %(vhosts_dir)/%n
+cgi = %(vhosts_dir)/%n
+;cgi-allowed-ext = .cgi
+cgi-allowed-ext = .py
+logto = %(log_dir)/%n.log</pre></p>
+		<p>I still use <code>uid</code> and <code>gid</code> parameters so that I could run
+		it from command line as:
+		 <br/><code>uwsgi --ini test.ini</code>
+		 <br/>I prefer Unix sockets but it is supports also HTTP sockets. Make sure that nginx
+		 can read and write to the socket. For that there is <code>chmod-socket</code>
+		 parameter. For testing without Nginx I use http-socket parameter combined with
+		 <code>http-socket-modifier1</code> and magic number 9 wich corresponds to CGI protocol.
+		 Documentation to uWSGI proposes using <code>http</code> parameter instead of
+		 <code>http-socket</code>, but it does not work. Magic variable <code>%n</code>
+		 expands to name of current INI file without extension.</p>
+		<p>Configuration for Nginx looks like this:<pre class="prettyprint">
+server {
+    listen 80 default_server;
+    set $root_folder /var/www/vhosts/test;
+    set $error_folder /usr/share/nginx/html;
+
+    root $root_folder;
+    recursive_error_pages on;
+    error_page 404 /error-pages/404.html;
+    error_page 500 502 503 504 /error-pages/50x.html;
+
+    location ^~ /error-pages/ {
+        alias $error_folder/;
+    }
+
+    location ~* \.(png|jpg)$ {
+        root /;
+        try_files $root_folder$uri $error_folder$uri =404;
+    }
+
+    location / {
+        index index.py index.cgi index.html;
+        try_files $uri $uri/ =404;
+        if (-f $request_filename) {
+            error_page 418 = @cgi_backend;
+            return 418;
+        }
+    }
+
+    location @cgi_backend {
+        uwsgi_intercept_errors on;
+        include uwsgi_params;
+        uwsgi_modifier1 9;
+        uwsgi_pass unix:/var/run/uwsgi/test.sock;
+    }
+}</pre></p>
+		<p>I can avoid using <code>if</code> in the config passing all requests to the
+		 application server, even if the file does not exist. In that case uWSGI would
+		 return 404 status, but I prefer to do this check with Nginx. I do not know why
+		 there is no special instruction to use a named location
+		 inside if-statement, so the workaround is to return an error which is not reported
+		 back to the client and process it using <code>error_page</code>. I want Nginx to
+		 process all errors even if they come from CGI, for that I need to use
+		 <br/><code>uwsgi_intercept_errors on;</code>
+		 <br/>directive. Since I already have generated
+		 an error state when I jumped to @cgi_backend named location, I have to enable
+		 recursive errors processing
+		 <br/><code>recursive_error_pages on;</code>
+		 <br/>My error pages contain images, and those images I prefer to keep outside of
+		 the site document root, so I decided to tell Nginx to look for all images in
+		 two folders.</p>
+		 <p>Now I can put whatever CGI script I want to /var/www/vhosts/test/ and it will
+		 be executed.</p>
+	    </article>
+	    <article class="blogPost">
                 <header>
                     <h2>Clipboard over VNC</h2>
                     <p>Posted on <time pubdate datetime="2016-03-22T16:58:35-05:00">March 22nd 2016</time></p>
@@ -347,7 +589,9 @@ int main(int argc, char** argv)
                 <header>
                     <h3>About</h3>
                 </header>
-                <p>This is my personal web site. Here I experiment with HTML5 and CSS, so it is under construction. Taking into account my native language is C++, not HTML, the site might remain under construction for quite a while</p>
+                <p>This is my personal web site. Here I experiment with HTML5, CSS, Web Servers and
+		 many other technologies without any specific purpose, so it is permanently under
+		 construction. It is my hobby. Also I put here some notes and thoughts.</p>
             </section>
             <section>
                 <header>
