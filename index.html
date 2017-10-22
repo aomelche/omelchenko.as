@@ -1,58 +1,149 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8"/>
-    <meta name="description" content="Alexey S. Omelchenko's personal website"/>
-    <meta name="author" content="Alexey S. Omelchenko"/>
-    <meta name="google-site-verification" content="rSjyvgkL1axuyImfyf_G55kB4L2oX8R6l9MFcTeVBxA" />
-    <title>Alexey S Omelchenko personal website</title>
-    <link type="text/css" rel="stylesheet" href="stylesheets/default.css"/>
-    <link type="text/css" rel="stylesheet" href="stylesheets/prettify.css" />    
-    <script type="text/javascript" src="javascripts/prettify/prettify.js"></script>
-    <!--[if lt IE 9]>
+	<meta charset="utf-8"/>
+	<meta name="description" content="Alexey S. Omelchenko's personal website"/>
+	<meta name="author" content="Alexey S. Omelchenko"/>
+	<meta name="google-site-verification" content="rSjyvgkL1axuyImfyf_G55kB4L2oX8R6l9MFcTeVBxA" />
+	<title>Alexey S Omelchenko personal website</title>
+	<link type="text/css" rel="stylesheet" href="stylesheets/default.css"/>
+	<link type="text/css" rel="stylesheet" href="stylesheets/prettify.css" />    
+	<script type="text/javascript" src="javascripts/prettify/prettify.js"></script>
+	<!--[if lt IE 9]>
 	<script src="javascripts/html5shiv.min.js"></script>
-    <![endif]-->
+	<![endif]-->
 </head>
 <body onload="prettyPrint()">
-    <header id="logo">
-        <h1>Alexey Omelchenko's Pages</h1>
-    </header>
-    <nav id="main">
-        <ul>
-            <li><a class="selected" href="#">Home</a></li>
-            <li><a href="about.html">About</a></li>
-            <li><a href="resume.html">R&eacute;sum&eacute;</a></li>
-            <li><a href="contact.html">Contact</a></li>
-        </ul>
-    </nav>
-    <section id="intro">
-    	<header>
-    		<h2>Coding Notes</h2>
-        </header>
-    </section>
-    <div id="main" class="clear">
-        <section id="articles">
-	    <article class="blogPost">
-                <header>
-                    <h2>Git Server Over HTTPS</h2>
-                    <p>Posted on <time pubdate datetime="2016-05-11T15:39:16-05:00">May 11th 2016</time></p>
-                </header>
-		<p>I want to do some programming experiments with Git. For that purpose I need a test
-		 environment simple but similar enough to GitHub: the server shall be accessible over
-		 HTTPS, basic HTTP authentication shall be required for git push, read operations shall be
-		 permitted without an authentication. Web server shall be Nginx.</p>
-		<p>Git comes with HTTP protocol adapter implemented as CGI called <code>cit-http-backend
-		 </code> aka Smart HTTP transport. I install git from standard repository, create user and
-		 group for Git, create a directory for future repositories.
-		 <pre class="prettyprint">
+	<header id="logo">
+		<h1>Alexey Omelchenko's Pages</h1>
+	</header>
+	<nav id="main">
+		<ul>
+			<li><a class="selected" href="#">Home</a></li>
+			<li><a href="about.html">About</a></li>
+			<li><a href="resume.html">R&eacute;sum&eacute;</a></li>
+			<li><a href="contact.html">Contact</a></li>
+		</ul>
+	</nav>
+	<section id="intro">
+		<header>
+			<h2>Coding Notes</h2>
+		</header>
+	</section>
+	<div id="main" class="clear">
+		<section id="articles">
+			<article class="blogPost">
+				<header>
+					<h2>HTTPS With Free Auto-updated Certificates</h2>
+					<p>Posted on <time pubdate datetime="2017-10-21T18:09:33-06:00">October 21st 2017</time></p>
+				</header>
+				<p>Not so far ago there was only one possibility to get a free certificate for basic HTTPS
+				 - <a href="https://en.wikipedia.org/wiki/StartCom">StartCom</a>. But then it was sold to
+				 a Chinese company that had been caught on cheating with certificates, so StartCom is not
+				 trustworthy anymore. Its root certificates trust has been removed from major browsers.
+				 So what the options we have today?</p>
+				<p>There is a project <a href="https://en.wikipedia.org/wiki/Let%27s_Encrypt">
+				 Let's Encrypt</a> which is open source, free to use, trusted by major browsers, fully
+				 automated and provides an API to update the certificates by a script. Below is a solution
+				 implemented at current site: CentOS 7.0 + Nginx.</p>
+				<p>Install <code>certbot</code> - the ACME client recommended by Let's Encrypt. This can be
+				 done from EPEL repository for yum.</p>
+				<p>Create a folder for verification through HTTP. In this folder we will put challenge
+				 files from the certification server.<pre class="prettyprint">
+mkdir /var/www/acme
+chmod 0750 /var/www/acme
+chgrp nginx /var/www/acme</pre></p>
+				<p>Prepare a file which we will include in all virtual server configurations. Put it into
+				 Nginx configuration folder (/etc/nginx). We need to tell Nginx where to search for
+				 challenge files.<pre class="prettyprint">
+location ^~ /.well-known/acme-challenge {
+    alias /var/www/acme;
+    try_files $uri =404;
+}
+</pre></p>
+				<p>Now include it into server section of the site we want to protect with HTTPS. The section
+				 itself must be not protected, because the challenge verification is done over HTTP.<pre class="prettyprint">
+server {
+    listen  80;
+    server_name omelchenko.as www.omelchenko.as;
+
+    include acme.conf;
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}</pre></p>
+				<p>To start using certbot we need to create an account on Let's Encrypt. This command does it:
+				 <code>certbot register --rsa-key-size 4096</code>, it also creates a set of folders under
+				 <code>/etc/letsencrypt</code>.
+				 We are going to use manual mode of the certbot. For that we will need 3 script hook
+				 files: <code>auth-put.sh</code>, <code>auth-clean.sh</code> and
+				 <code>post-renewal.sh</code>. It is not important where to put them. For simplicity put
+				 them into <code>/etc/letsencrypt/scripts</code>.<pre class="prettyprint">
+auth-put.sh
+
+#!/bin/bash
+printf "%s" $CERTBOT_VALIDATION > /var/www/acme/$CERTBOT_TOKEN
+--------------------------------------------------------------
+auth-clean.sh
+
+#!/bin/bash
+rm -f /var/www/acme/$CERTBOT_TOKEN
+--------------------------------------------------------------
+post-renewal.sh
+
+#!/bin/bash
+systemctl restart nginx
+</pre>We need to restart Nginx, because reload command does not reload certificates.</p>
+				<p>Now that the hook scripts are in place, we can create our first certificate using
+				 the following command. We need to repeat it for each group of domain names that will
+				 use separate certificates.<pre class="prettyprint">
+certbot certonly --manual --strict-permissions --keep-until-expiring --agree-tos \
+ --email &lt;host master e-mail&gt; --no-eff-email --rsa-key-size 4096 \
+ --manual-public-ip-logging-ok \
+ --manual-auth-hook /etc/letsencrypt/scripts/auth-put.sh \
+ --manual-cleanup-hook /etc/letsencrypt/scripts/auth-clean.sh \
+ --cert-name &lt;certificate name&gt; -d &lt;your domain 1&gt; -d &lt;your domain 2&gt;...
+</pre>			 This command creates private key, makes the certificate request, validates the ownership
+				 of the domain through HTTP challenge, downloads the certificate and puts everything
+				 into the folder <code>/etc/letsencrypt/archive/&lt;certificate name&gt;</code>. It also
+				 creates symlinks in <code>/etc/letsencrypt/live/&lt;certificate name&gt;</code>:
+				 <code>fullchain.pem</code>, <code>privkey.pem</code>... We will use these links in Nginx
+				 configurations:<pre class="prettyprint">
+server {
+    listen 443 ssl;
+    server_name omelchenko.as www.omelchenko.as;
+
+    ssl_certificate /etc/letsencrypt/live/omelchenko.as/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/omelchenko.as/privkey.pem;
+...
+</pre></p>
+				<p>Last important step is to setup automated certificates renewal. For that in crontab
+				 we can add the following command:<pre class="prettyprint">
+certbot renew --post-hook /etc/letsencrypt/scripts/post-renewal.sh 2>&1 >>~/log.txt
+</pre>Certbot developers recommend running it twice a day. The actual renewal is executed when
+				 the certificate is expiring in 30 days or less.</p>
+			</article>
+			<article class="blogPost">
+				<header>
+					<h2>Git Server Over HTTPS</h2>
+					<p>Posted on <time pubdate datetime="2016-05-11T15:39:16-05:00">May 11th 2016</time></p>
+				</header>
+				<p>I want to do some programming experiments with Git. For that purpose I need a test
+				 environment simple but similar enough to GitHub: the server shall be accessible over
+				 HTTPS, basic HTTP authentication shall be required for git push, read operations shall be
+				 permitted without an authentication. Web server shall be Nginx.</p>
+				<p>Git comes with HTTP protocol adapter implemented as CGI called <code>cit-http-backend
+				 </code> aka Smart HTTP transport. I install git from standard repository, create user and
+				 group for Git, create a directory for future repositories.
+				 <pre class="prettyprint">
 yum install git
 useradd --no-create-home --shell /sbin/nologin git
 usermod -G git -a nginx
 mkdir -p /srv/git
 chmod 750 /srv/git
 chown git:git /srv/git</pre></p>
-		<p>Now as <code>git</code> user I create a bare repository <code>test.git</code>
-		 <pre class="prettyprint">
+				<p>Now as <code>git</code> user I create a bare repository <code>test.git</code>
+				 <pre class="prettyprint">
 su -s /bin/bash git
 
 # execute next commands as git
@@ -62,9 +153,9 @@ git init --bare
 
 # to allow anonymous push for testing purposes:
 git config http.receivepack true</pre></p>
-		<p>I already know how to run CGI scripts on Nginx through
-		 uWSGI, so I create a new worker for Git in uWSGI emperor directory <code>git.ini</code>
-		 set ownership as git:git and put the following content:<pre class="prettyprint">
+				<p>I already know how to run CGI scripts on Nginx through
+				 uWSGI, so I create a new worker for Git in uWSGI emperor directory <code>git.ini</code>
+				 set ownership as git:git and put the following content:<pre class="prettyprint">
 [uwsgi]
 set-ph = runtime_dir=/var/run/uwsgi
 set-ph = log_dir=/var/log/%U
@@ -82,85 +173,85 @@ cgi = /usr/libexec/git-core/git-http-backend
 env = GIT_HTTP_EXPORT_ALL=yes
 env = GIT_PROJECT_ROOT=/srv/git
 logto = %(log_dir)/%n.log</pre></p>
-		<p>Here I put cgi command. If it points to a file, then this file will be run as CGI
-		 script for processing of all incoming requests. This is exactly what I need for Git.
-		 <br/>I put environment variables <code>GIT_HTTP_EXPORT_ALL</code> and
-		 <code>GIT_PROJECT_ROOT</code> here so there is no need to set them in Nginx
-		 configuration.
-		 <br/>For basic authentication I need a passwd file wich can be created by several
-		 utilities. The standard one is htpasswd. <code>htpasswd -c /srv/git/.htpasswd test</code>
-		 creates the file and adds the user test. To add other users run the same without
-		 <code>-c</code>. Now I am ready to configure Nginx:<pre class="prettyprint">
+				<p>Here I put cgi command. If it points to a file, then this file will be run as CGI
+				 script for processing of all incoming requests. This is exactly what I need for Git.
+				 <br/>I put environment variables <code>GIT_HTTP_EXPORT_ALL</code> and
+				 <code>GIT_PROJECT_ROOT</code> here so there is no need to set them in Nginx
+				 configuration.
+				 <br/>For basic authentication I need a passwd file which can be created by several
+				 utilities. The standard one is htpasswd. <code>htpasswd -c /srv/git/.htpasswd test</code>
+				 creates the file and adds the user test. To add other users run the same without
+				 <code>-c</code>. Now I am ready to configure Nginx:<pre class="prettyprint">
 server {
-    listen 443 ssl default_server;
+	listen 443 ssl default_server;
 
-    ssl_certificate /etc/pki/tls/certs/my.crt;
-    ssl_certificate_key /etc/pki/tls/private/my.key;
+	ssl_certificate /etc/pki/tls/certs/my.crt;
+	ssl_certificate_key /etc/pki/tls/private/my.key;
 
-    set $root_folder /var/www/vhosts/example.com;
-    root $root_folder;
+	set $root_folder /var/www/vhosts/example.com;
+	root $root_folder;
 
-    location / {
-        index index.html;
-        try_files $uri $uri/ =404;
-    }
+	location / {
+		index index.html;
+		try_files $uri $uri/ =404;
+	}
 
-    location ~ ^/git(/.*)$ {
-        location ~ ^/git(/.*/git-receive-pack)$ {
-            auth_basic "Restricted";
-            auth_basic_user_file /srv/git/.htpasswd;
-            include uwsgi_params;
-            uwsgi_modifier1 9;
-            uwsgi_param PATH_INFO $1;
-            uwsgi_param REMOTE_USER $remote_user;
-            uwsgi_pass unix:/run/uwsgi/git.sock;
-        }
+	location ~ ^/git(/.*)$ {
+		location ~ ^/git(/.*/git-receive-pack)$ {
+			auth_basic "Restricted";
+			auth_basic_user_file /srv/git/.htpasswd;
+			include uwsgi_params;
+			uwsgi_modifier1 9;
+			uwsgi_param PATH_INFO $1;
+			uwsgi_param REMOTE_USER $remote_user;
+			uwsgi_pass unix:/run/uwsgi/git.sock;
+		}
 
-        include uwsgi_params;
-        uwsgi_modifier1 9;
-        uwsgi_param PATH_INFO $1;
-        uwsgi_pass unix:/run/uwsgi/git.sock;
-    }
+		include uwsgi_params;
+		uwsgi_modifier1 9;
+		uwsgi_param PATH_INFO $1;
+		uwsgi_pass unix:/run/uwsgi/git.sock;
+	}
 }</pre></p>
-		 <p>It is important to set <code>PATH_INFO</code> parameter. Without it Git will return
-		 500 error. Also is is important that <code>PATH_INFO</code> shall begin with
-		 <code>/</code> and contain path relative to Git root folder. It is where git-http-backend
-		 will look for the repositories.
-		 <br/>Here I put Git URL under /git folder so that it could be accessed as
-		 <code>https://example.com/git/test.git</code> from Git clients.
-		 <br/>Since I want authentication only for push commands, I have to distinguish all
-		 requests coming to <code>/git/...</code> For that I use nested locations directives.
-		 If request ends with <code>git-receive-pack</code> Nginx will request login and password.
-		 Otherwise not.</p>
-	    </article>
-            <article class="blogPost">
-                <header>
-                    <h2>Running CGI behind Nginx on CentOS 7</h2>
-                    <p>Posted on <time pubdate datetime="2016-05-04T12:49:18-05:00">May 4th 2016</time></p>
-                </header>
-                <p>Nginx does not have native support of CGI protocol, so I need something which will
-		 work as an application server. Maybe the most widespread approach is to put some Apache
-		 and use Nginx as a reverse proxy to forward HTTP requests. I do not like this idea
-		 because I try to avoid using Apache as long as possible. Another approach is to use native
-		 support of FastCGI and translate those requests to CGI scripts calls. I found an utility
-		 <a href="https://github.com/gnosek/fcgiwrap">fcgi_wrap</a> which does the translation,
-		 and it requires something that will launch it and keep it running, like
-		 <a href="http://redmine.lighttpd.net/projects/spawn-fcgi">spawn-fcgi</a>. None of them is
-		 included into CentOS 7 packages, so some people build them from source distribution.</p>
-		<p>I prefer to use another solution called uWCGI. It uses a fast binary uwsgi protocol and
-		 it looks very flexible and extensible. To serve CGI I need to install packages: nginx,
-		 uwsgi and uwsgi-plugin-common, which contains CGI plugin I need.<pre class="prettyprint">
+				 <p>It is important to set <code>PATH_INFO</code> parameter. Without it Git will return
+				 500 error. Also is is important that <code>PATH_INFO</code> shall begin with
+				 <code>/</code> and contain path relative to Git root folder. It is where git-http-backend
+				 will look for the repositories.
+				 <br/>Here I put Git URL under /git folder so that it could be accessed as
+				 <code>https://example.com/git/test.git</code> from Git clients.
+				 <br/>Since I want authentication only for push commands, I have to distinguish all
+				 requests coming to <code>/git/...</code> For that I use nested locations directives.
+				 If request ends with <code>git-receive-pack</code> Nginx will request login and password.
+				 Otherwise not.</p>
+			</article>
+			<article class="blogPost">
+				<header>
+					<h2>Running CGI behind Nginx on CentOS 7</h2>
+					<p>Posted on <time pubdate datetime="2016-05-04T12:49:18-05:00">May 4th 2016</time></p>
+				</header>
+				<p>Nginx does not have native support of CGI protocol, so I need something which will
+				 work as an application server. Maybe the most widespread approach is to put some Apache
+				 and use Nginx as a reverse proxy to forward HTTP requests. I do not like this idea
+				 because I try to avoid using Apache as long as possible. Another approach is to use native
+				 support of FastCGI and translate those requests to CGI scripts calls. I found an utility
+				 <a href="https://github.com/gnosek/fcgiwrap">fcgi_wrap</a> which does the translation,
+				 and it requires something that will launch it and keep it running, like
+				 <a href="http://redmine.lighttpd.net/projects/spawn-fcgi">spawn-fcgi</a>. None of them is
+				 included into CentOS 7 packages, so some people build them from source distribution.</p>
+				<p>I prefer to use another solution called uWCGI. It uses a fast binary uwsgi protocol and
+				 it looks very flexible and extensible. To serve CGI I need to install packages: nginx,
+				 uwsgi and uwsgi-plugin-common, which contains CGI plugin I need.<pre class="prettyprint">
 #The services can bee enabled as usual
 systemctl enable uwsgi
 systemctl enable nginx</pre></p>
-		<p>The default uWSGI configuration creates <code>/run/uwsgi</code> folder and runs the service
-		 as <code>uwsgi:uwsgi</code>. Default <code>/etc/uwsgi.ini</code> config is good enough.
-		 It runs master process called emperor and monitors a specified folder for INI
-		 files by mask. When a new INI appears the master process creates a worker called vassal
-		 according to the settings. When a configuration file disappears, the emperor terminates
-		 the worker. When a file is modified, the master process re-spawns the worker with new
-		 settings. Sounds appealing. The only thing I add here is creation of folder where all
-		 vassal logs will go.<pre class="prettyprint">
+				<p>The default uWSGI configuration creates <code>/run/uwsgi</code> folder and runs the service
+				 as <code>uwsgi:uwsgi</code>. Default <code>/etc/uwsgi.ini</code> config is good enough.
+				 It runs master process called emperor and monitors a specified folder for INI
+				 files by mask. When a new INI appears the master process creates a worker called vassal
+				 according to the settings. When a configuration file disappears, the emperor terminates
+				 the worker. When a file is modified, the master process re-spawns the worker with new
+				 settings. Sounds appealing. The only thing I add here is creation of folder where all
+				 vassal logs will go.<pre class="prettyprint">
 [uwsgi]
 set-ph = user=uwsgi
 set-ph = group=uwsgi
@@ -178,18 +269,18 @@ cap = setgid,setuid
 exec-as-root = mkdir -p %(log_dir)
 exec-as-root = chmod 770 %(log_dir)
 exec-as-root = chown %(user):%(group) %(log_dir)</pre></p>
-		<p>I want to run uwsgi master service as uwsgi user, but worker for processing CGI as
-		 nginx user. It is interesting part. Despite INI files can have parameter <code>uid</code>
-		 and <code>gid</code>, they are completely ignored if the master service is running
-		 in <code>emperor-tyrant</code> mode. The author's idea was to allow multiple users on
-		 the system to create their own worker processes putting INI files to the monitored
-		 directory. In this case you cannot use user or group which they want. It would be
-		 a security hole. Instead the master process runs slave processes under owner of
-		 the INI file credentials. That is why unlike most of configuration files under /etc
-		 I cannot keep root as the owner of those INI files. If the file's owner is root,
-		 there will be error messages in logs as follows:
-		 <br/><code>[emperor-tyrant] invalid permissions for vassal test.ini</code></p>
-		 <p>Here is my generic "vassal" configuration for CGI processing:<pre class="prettyprint">
+				<p>I want to run uwsgi master service as uwsgi user, but worker for processing CGI as
+				 nginx user. It is interesting part. Despite INI files can have parameter <code>uid</code>
+				 and <code>gid</code>, they are completely ignored if the master service is running
+				 in <code>emperor-tyrant</code> mode. The author's idea was to allow multiple users on
+				 the system to create their own worker processes putting INI files to the monitored
+				 directory. In this case you cannot use user or group which they want. It would be
+				 a security hole. Instead the master process runs slave processes under owner of
+				 the INI file credentials. That is why unlike most of configuration files under /etc
+				 I cannot keep root as the owner of those INI files. If the file's owner is root,
+				 there will be error messages in logs as follows:
+				 <br/><code>[emperor-tyrant] invalid permissions for vassal test.ini</code></p>
+				 <p>Here is my generic "vassal" configuration for CGI processing:<pre class="prettyprint">
 [uwsgi]
 set-ph = runtime_dir=/var/run/uwsgi
 set-ph = log_dir=/var/log/uwsgi
@@ -210,104 +301,104 @@ cgi = %(vhosts_dir)/%n
 ;cgi-allowed-ext = .cgi
 cgi-allowed-ext = .py
 logto = %(log_dir)/%n.log</pre></p>
-		<p>I still use <code>uid</code> and <code>gid</code> parameters so that I could run
-		it from command line as:
-		 <br/><code>uwsgi --ini test.ini</code>
-		 <br/>I prefer Unix sockets but it is supports also HTTP sockets. Make sure that nginx
-		 can read and write to the socket. For that there is <code>chmod-socket</code>
-		 parameter. For testing without Nginx I use http-socket parameter combined with
-		 <code>http-socket-modifier1</code> and magic number 9 wich corresponds to CGI protocol.
-		 Documentation to uWSGI proposes using <code>http</code> parameter instead of
-		 <code>http-socket</code>, but it does not work. Magic variable <code>%n</code>
-		 expands to name of current INI file without extension.</p>
-		<p>Configuration for Nginx looks like this:<pre class="prettyprint">
+				<p>I still use <code>uid</code> and <code>gid</code> parameters so that I could run
+				it from command line as:
+				 <br/><code>uwsgi --ini test.ini</code>
+				 <br/>I prefer Unix sockets but it is supports also HTTP sockets. Make sure that nginx
+				 can read and write to the socket. For that there is <code>chmod-socket</code>
+				 parameter. For testing without Nginx I use http-socket parameter combined with
+				 <code>http-socket-modifier1</code> and magic number 9 wich corresponds to CGI protocol.
+				 Documentation to uWSGI proposes using <code>http</code> parameter instead of
+				 <code>http-socket</code>, but it does not work. Magic variable <code>%n</code>
+				 expands to name of current INI file without extension.</p>
+				<p>Configuration for Nginx looks like this:<pre class="prettyprint">
 server {
-    listen 80 default_server;
-    set $root_folder /var/www/vhosts/test;
-    set $error_folder /usr/share/nginx/html;
+	listen 80 default_server;
+	set $root_folder /var/www/vhosts/test;
+	set $error_folder /usr/share/nginx/html;
 
-    root $root_folder;
-    recursive_error_pages on;
-    error_page 404 /error-pages/404.html;
-    error_page 500 502 503 504 /error-pages/50x.html;
+	root $root_folder;
+	recursive_error_pages on;
+	error_page 404 /error-pages/404.html;
+	error_page 500 502 503 504 /error-pages/50x.html;
 
-    location ^~ /error-pages/ {
-        alias $error_folder/;
-    }
+	location ^~ /error-pages/ {
+		alias $error_folder/;
+	}
 
-    location ~* \.(png|jpg)$ {
-        root /;
-        try_files $root_folder$uri $error_folder$uri =404;
-    }
+	location ~* \.(png|jpg)$ {
+		root /;
+		try_files $root_folder$uri $error_folder$uri =404;
+	}
 
-    location / {
-        index index.py index.cgi index.html;
-        try_files $uri $uri/ =404;
-        if (-f $request_filename) {
-            error_page 418 = @cgi_backend;
-            return 418;
-        }
-    }
+	location / {
+		index index.py index.cgi index.html;
+		try_files $uri $uri/ =404;
+		if (-f $request_filename) {
+			error_page 418 = @cgi_backend;
+			return 418;
+		}
+	}
 
-    location @cgi_backend {
-        uwsgi_intercept_errors on;
-        include uwsgi_params;
-        uwsgi_modifier1 9;
-        uwsgi_pass unix:/var/run/uwsgi/test.sock;
-    }
+	location @cgi_backend {
+		uwsgi_intercept_errors on;
+		include uwsgi_params;
+		uwsgi_modifier1 9;
+		uwsgi_pass unix:/var/run/uwsgi/test.sock;
+	}
 }</pre></p>
-		<p>I can avoid using <code>if</code> in the config passing all requests to the
-		 application server, even if the file does not exist. In that case uWSGI would
-		 return 404 status, but I prefer to do this check with Nginx. I do not know why
-		 there is no special instruction to use a named location
-		 inside if-statement, so the workaround is to return an error which is not reported
-		 back to the client and process it using <code>error_page</code>. I want Nginx to
-		 process all errors even if they come from CGI, for that I need to use
-		 <br/><code>uwsgi_intercept_errors on;</code>
-		 <br/>directive. Since I already have generated
-		 an error state when I jumped to @cgi_backend named location, I have to enable
-		 recursive errors processing
-		 <br/><code>recursive_error_pages on;</code>
-		 <br/>My error pages contain images, and those images I prefer to keep outside of
-		 the site document root, so I decided to tell Nginx to look for all images in
-		 two folders.</p>
-		 <p>Now I can put whatever CGI script I want to /var/www/vhosts/test/ and it will
-		 be executed.</p>
-	    </article>
-	    <article class="blogPost">
-                <header>
-                    <h2>Clipboard over VNC</h2>
-                    <p>Posted on <time pubdate datetime="2016-03-22T16:58:35-05:00">March 22nd 2016</time></p>
-                </header>
-                <p>When working with Linux over VNC one thing is important to understand about clipboard. VNC
-		 client and server do synchronize their clipboards, but in order to do that a separate
-		 application must be running: <pre>vncconfig</pre>So if your copy-paste does not work,
-		 check if VNC Config is still running.</p>
-		<p>When I use terminal, I prefer select-copy with left mouse click and paste with right mouse
-		 click. Unix gurus like to paste using their middle "button" or simulate it using simultaneous
-		 two button click when working on laptops. They say it is standard Unix style. Of course, they
-		 are right.</p>
-		 <p>I personally prefer to ignore the standard, because PuTTY-style clipboard operations much
-		 more ergonomic. First of all, there is no such thing in common mice as "middle button". It is
-		 a wheel. Is is not designed ergonomically to be pressed. It spins. And it scrolls the window.
-		 Scrolling is the last thing I want when I try to paste something. Middle "button" emulation
-		 using two button click is even less ergonomic. In order to do that on most devices you have
-		 to use two times more fingers than otherwise.</p>
-		<p>To make XTerm behave like PuTTY, we need to override the default translations in X resources.
-		 It can be done either on local level in ~/.Xresources or globally. I prefer to add to the
-		 XTerm defaults <code>/usr/share/X11/app-defaults/XTerm</code> the following lines:<pre class="prettyprint">
+				<p>I can avoid using <code>if</code> in the config passing all requests to the
+				 application server, even if the file does not exist. In that case uWSGI would
+				 return 404 status, but I prefer to do this check with Nginx. I do not know why
+				 there is no special instruction to use a named location
+				 inside if-statement, so the workaround is to return an error which is not reported
+				 back to the client and process it using <code>error_page</code>. I want Nginx to
+				 process all errors even if they come from CGI, for that I need to use
+				 <br/><code>uwsgi_intercept_errors on;</code>
+				 <br/>directive. Since I already have generated
+				 an error state when I jumped to @cgi_backend named location, I have to enable
+				 recursive errors processing
+				 <br/><code>recursive_error_pages on;</code>
+				 <br/>My error pages contain images, and those images I prefer to keep outside of
+				 the site document root, so I decided to tell Nginx to look for all images in
+				 two folders.</p>
+				 <p>Now I can put whatever CGI script I want to /var/www/vhosts/test/ and it will
+				 be executed.</p>
+			</article>
+			<article class="blogPost">
+				<header>
+					<h2>Clipboard over VNC</h2>
+					<p>Posted on <time pubdate datetime="2016-03-22T16:58:35-05:00">March 22nd 2016</time></p>
+				</header>
+				<p>When working with Linux over VNC one thing is important to understand about clipboard. VNC
+				 client and server do synchronize their clipboards, but in order to do that a separate
+				 application must be running: <pre>vncconfig</pre>So if your copy-paste does not work,
+				 check if VNC Config is still running.</p>
+				<p>When I use terminal, I prefer select-copy with left mouse click and paste with right mouse
+				 click. Unix gurus like to paste using their middle "button" or simulate it using simultaneous
+				 two button click when working on laptops. They say it is standard Unix style. Of course, they
+				 are right.</p>
+				 <p>I personally prefer to ignore the standard, because PuTTY-style clipboard operations much
+				 more ergonomic. First of all, there is no such thing in common mice as "middle button". It is
+				 a wheel. Is is not designed ergonomically to be pressed. It spins. And it scrolls the window.
+				 Scrolling is the last thing I want when I try to paste something. Middle "button" emulation
+				 using two button click is even less ergonomic. In order to do that on most devices you have
+				 to use two times more fingers than otherwise.</p>
+				<p>To make XTerm behave like PuTTY, we need to override the default translations in X resources.
+				 It can be done either on local level in ~/.Xresources or globally. I prefer to add to the
+				 XTerm defaults <code>/usr/share/X11/app-defaults/XTerm</code> the following lines:<pre class="prettyprint">
 *VT100.Translations: #override\
-    ~Ctrl ~Meta &lt;Btn3Down>:ignore() \n\
-    ~Meta &lt;Btn3Motion>:ignore() \n\
-    ~Ctrl ~Meta &lt;Btn3Up>:insert-selection(PRIMARY, CUT_BUFFER0)</pre></p>
-		<p>When working with files in Midnight Commander in order to use the terminal clipboard you
-		 have to press Shift button in addition to the mouse operations.</p>
-	    </article>
-            <article class="blogPost">
-                <header>
-                    <h2>Minimalist GUI Server on CentOS 7</h2>
-                    <p>Posted on <time pubdate datetime="2015-02-22T14:52:50-05:00">February 22nd 2015</time></p>
-                </header>
+	~Ctrl ~Meta &lt;Btn3Down>:ignore() \n\
+	~Meta &lt;Btn3Motion>:ignore() \n\
+	~Ctrl ~Meta &lt;Btn3Up>:insert-selection(PRIMARY, CUT_BUFFER0)</pre></p>
+				<p>When working with files in Midnight Commander in order to use the terminal clipboard you
+				 have to press Shift button in addition to the mouse operations.</p>
+			</article>
+			<article class="blogPost">
+				<header>
+					<h2>Minimalist GUI Server on CentOS 7</h2>
+					<p>Posted on <time pubdate datetime="2015-02-22T14:52:50-05:00">February 22nd 2015</time></p>
+				</header>
 				<p>Most VPS hosting providers have CentOS platform as template. I have
 				 successfully run CentOS 6.5 on 512 MiB. CPU speed is not that important at this
 				 point. Here I will setup CentOS 7 - there are some changes in comparison with
@@ -475,12 +566,12 @@ xrdb -merge /usr/share/X11/app-defaults/XTerm-color</pre></p>
 				 require the same manipulation too.</p>
 				<p>Now we can restart vncserver, connect, see good dwm interface, hit
 				 Alt+Shift+Enter to run xterm. Enjoy.</p>
-            </article>
-            <article class="blogPost">
-                <header>
-                    <h2>unique_ptr vs auto_ptr</h2>
-                    <p>Posted on <time pubdate datetime="2013-04-08T23:31:45+03:00">April 8th 2013</time></p>
-                </header>
+			</article>
+			<article class="blogPost">
+				<header>
+					<h2>unique_ptr vs auto_ptr</h2>
+					<p>Posted on <time pubdate datetime="2013-04-08T23:31:45+03:00">April 8th 2013</time></p>
+				</header>
 				<p>C++11 standard now has a set of new smart pointers classes.
 				 unique_ptr is the one that makes auto_ptr deprecated. And there is a good
 				 reason. So what are the differences between these two classes from a user
@@ -495,16 +586,16 @@ xrdb -merge /usr/share/X11/app-defaults/XTerm-color</pre></p>
 				 not designed to store objects in a container or to make copies of itself. It was
 				 not designed to be very useful for controlling life time of objects inside other
 				 data types. But it is still possible to write code like this:</p>
-                <?prettify lang=cpp?>
-                <pre class="prettyprint">
+				<?prettify lang=cpp?>
+				<pre class="prettyprint">
 struct MyClass {
-    std::auto_ptr&lt;int> MyPtr;
-    MyClass() : MyPtr(new int) {}
+	std::auto_ptr&lt;int> MyPtr;
+	MyClass() : MyPtr(new int) {}
 };</pre>
-                <p>but it leads to effects that are hardly useful. auto_ptr does not forbid copy
+				<p>but it leads to effects that are hardly useful. auto_ptr does not forbid copy
 				 construction or assignment, because C++ before C++11 did not have any facility to
 				 forbid it and solve the designed scenarios at the same time.</p>
-                <p>Now we have lvalue references and special new "move" semantics for operations
+				<p>Now we have lvalue references and special new "move" semantics for operations
 				 with those references. All this makes possible to create another smart pointer
 				 that solves the initial scenarios but makes it hard to misuse it. <code>unique_ptr</code>
 				 does not have copy constructor or copy assignment operator. You still can transfer
@@ -524,7 +615,7 @@ struct MyClass {
 				 whith classic pointer. It depends on the deleter, so I am going to write some
 				 malloc_deleter without any overhead as well. And show its usage with the example
 				 of gcc type names un-mangling.</p>
-                <pre class="prettyprint">
+				<pre class="prettyprint">
 #include &lt;memory>
 #include &lt;cstdlib>
 #include &lt;cxxabi.h>
@@ -536,87 +627,87 @@ struct MyClass {
 template&lt;void (*fun)(void*)>
 struct fun_delete
 {
-    void operator () (void* p) { return (*fun)(p); }
+	void operator () (void* p) { return (*fun)(p); }
 };
 
 typedef fun_delete&lt;std::free> malloc_delete;
 
 std::unique_ptr&lt;char, malloc_delete> demangle_type_name(const char* name)
 {
-    int status;
-    // The buffer has to be allocated with malloc or null. If null, then
-    // the result string is allocated with malloc.
-    std::unique_ptr&lt;char, malloc_delete> real_name (
-        abi::__cxa_demangle(name, 0, 0, &amp;status));
+	int status;
+	// The buffer has to be allocated with malloc or null. If null, then
+	// the result string is allocated with malloc.
+	std::unique_ptr&lt;char, malloc_delete> real_name (
+		abi::__cxa_demangle(name, 0, 0, &amp;status));
 
-    if( 0 != status )
-        throw std::runtime_error("Fail to demangle");
+	if( 0 != status )
+		throw std::runtime_error("Fail to demangle");
 
-    return real_name;
+	return real_name;
 }
 
 int main(int argc, char** argv)
 {
-    std::cout &lt;&lt; demangle_type_name(typeid(1)).get() &lt;&lt; std::endl;
-    std::cout &lt;&lt; demangle_type_name(typeid(2.0)).get() &lt;&lt; std::endl;
-    std::cout &lt;&lt; demangle_type_name(typeid("42")).get() &lt;&lt; std::endl;
+	std::cout &lt;&lt; demangle_type_name(typeid(1)).get() &lt;&lt; std::endl;
+	std::cout &lt;&lt; demangle_type_name(typeid(2.0)).get() &lt;&lt; std::endl;
+	std::cout &lt;&lt; demangle_type_name(typeid("42")).get() &lt;&lt; std::endl;
 }
 </pre>
-            </article>
-        </section>
-        <aside>
-            <section>
-                <header>
-                    <h3>Useful Links</h3>
-                </header>
-                <nav id="categories">
-                    <ul>
-                        <li><a href="http://www.cplusplus.com">CPlusPlus.com</a></li>
-                        <li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3337.pdf">C++11 Standard</a></li>
-                        <li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3797.pdf">C++14 Standard</a></li>
-                        <li><a href="http://cppcms.com">C++ Web Framework</a></li>
-                        <li><a href="http://www.sugarcrm.com/community">SugarCRM Community</a></li>
-                        <li><a href="http://www.nas4free.org">NAS4Free/ZFS v28</a></li>
-                        <li><a href="http://www.netapp.com">NetApp</a></li>
-                    </ul>
-                </nav>
-            </section>
-        </aside>
-    </div>
-    <footer>
-    	<div class="clear">
-            <section id="about">
-                <header>
-                    <h3>About</h3>
-                </header>
-                <p>This is my personal web site. Here I experiment with HTML5, CSS, Web Servers and
-		 many other technologies without any specific purpose, so it is permanently under
-		 construction. It is my hobby. Also I put here some notes and thoughts.</p>
-            </section>
-            <section>
-                <header>
-                    <h3>News</h3>
-                </header>
-                <nav id="blogRoll">
-                    <ul>
-                        <li><a href="#">Under Construction</a></li>
-                    </ul>
-                </nav>
-            </section>
-            <section>
-                <header>
-                    <h3>Site Map</h3>
-                </header>
-                <nav id="siteMap">
-                    <ul>
-                        <li><a href="#">Home</a></li>
-                        <li><a href="about.html">About</a></li>
-                        <li><a href="resume.html">R&eacute;sum&eacute;</a></li>
-                        <li><a href="contact.html">Contact</a></li>
-                    </ul>
-                </nav>
-            </section>
-        </div>
-    </footer>
+			</article>
+		</section>
+		<aside>
+			<section>
+				<header>
+					<h3>Useful Links</h3>
+				</header>
+				<nav id="categories">
+					<ul>
+						<li><a href="http://www.cplusplus.com">CPlusPlus.com</a></li>
+						<li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3337.pdf">C++11 Standard</a></li>
+						<li><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3797.pdf">C++14 Standard</a></li>
+						<li><a href="http://cppcms.com">C++ Web Framework</a></li>
+						<li><a href="http://www.sugarcrm.com/community">SugarCRM Community</a></li>
+						<li><a href="http://www.nas4free.org">NAS4Free/ZFS v28</a></li>
+						<li><a href="http://www.netapp.com">NetApp</a></li>
+					</ul>
+				</nav>
+			</section>
+		</aside>
+	</div>
+	<footer>
+		<div class="clear">
+			<section id="about">
+				<header>
+					<h3>About</h3>
+				</header>
+				<p>This is my personal web site. Here I experiment with HTML5, CSS, Web Servers and
+				 many other technologies without any specific purpose, so it is permanently under
+				 construction. It is my hobby. Also I put here some notes and thoughts.</p>
+			</section>
+			<section>
+				<header>
+					<h3>News</h3>
+				</header>
+				<nav id="blogRoll">
+					<ul>
+						<li><a href="#">Under Construction</a></li>
+					</ul>
+				</nav>
+			</section>
+			<section>
+				<header>
+					<h3>Site Map</h3>
+				</header>
+				<nav id="siteMap">
+					<ul>
+						<li><a href="#">Home</a></li>
+						<li><a href="about.html">About</a></li>
+						<li><a href="resume.html">R&eacute;sum&eacute;</a></li>
+						<li><a href="contact.html">Contact</a></li>
+					</ul>
+				</nav>
+			</section>
+		</div>
+	</footer>
 </body>
 </html>
