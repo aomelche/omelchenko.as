@@ -1,0 +1,170 @@
+
+useradd aomelche
+passwd aomelche
+usermod -aG wheel aomelche
+
+timedatectl set-timezone UTC
+
+yum install nginx uwsgi uwsgi-plugin-common certbot git
+
+mkdir /var/www/acme
+chmod 0750 /var/www/acme
+chgrp nginx /var/www/acme
+
+touch /etc/nginx/acme.conf
+chmod 644 /etc/nginx/acme.conf
+
+cat <<EOF > /etc/nginx/acme.conf
+location ^~ /.well-known/acme-challenge {
+    alias /var/www/acme;
+    try_files \$uri =404;
+}
+EOF
+
+touch /etc/nginx/conf.d/omelchenko.as.conf
+chmod 644 /etc/nginx/conf.d/omelchenko.as.conf
+
+cat <<EOF > /etc/nginx/conf.d/omelchenko.as.conf
+server {
+    listen  80;
+    server_name omelchenko.as www.omelchenko.as;
+
+    include acme.conf;
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+
+EOF
+
+certbot register --rsa-key-size 4096
+mkdir /etc/letsencrypt/scripts
+touch /etc/letsencrypt/scripts/auth-put.sh
+touch /etc/letsencrypt/scripts/auth-clean.sh
+touch /etc/letsencrypt/scripts/post-renewal.sh
+chmod 700 /etc/letsencrypt/scripts/auth-put.sh \
+    /etc/letsencrypt/scripts/auth-clean.sh \
+    /etc/letsencrypt/scripts/post-renewal.sh
+
+cat <<EOF > /etc/letsencrypt/scripts/auth-put.sh
+#!/bin/bash
+printf "%s" \$CERTBOT_VALIDATION > /var/www/acme/\$CERTBOT_TOKEN
+EOF
+
+cat <<EOF > /etc/letsencrypt/scripts/auth-clean.sh
+#!/bin/bash
+rm -f /var/www/acme/\$CERTBOT_TOKEN
+EOF
+
+cat <<EOF > /etc/letsencrypt/scripts/post-renewal.sh
+#!/bin/bash
+systemctl restart nginx
+EOF
+
+certbot certonly --manual --strict-permissions --keep-until-expiring --agree-tos \
+ --email aomelche@gmail.com --no-eff-email --rsa-key-size 4096 \
+ --manual-public-ip-logging-ok \
+ --manual-auth-hook /etc/letsencrypt/scripts/auth-put.sh \
+ --manual-cleanup-hook /etc/letsencrypt/scripts/auth-clean.sh \
+ --cert-name omelchenko.as -d omelchenko.as -d www.omelchenko.as
+
+cat <<EOF >> ~/crontab.txt
+34 6 * * * certbot renew --post-hook /etc/letsencrypt/scripts/post-renewal.sh 2>&1 >>~/log.txt
+EOF
+
+crontab crontab.txt
+
+mkdir -p -m 751 /var/www/vhosts
+mkdir -m 750 /var/www/vhosts/omelchenko.as
+chown aomelche:omelchenko.as /var/www/vhosts/omelchenko.as
+
+cat <<EOF >> /etc/nginx/conf.d/omelchenko.as.conf
+server {
+    listen 443 ssl;
+    server_name omelchenko.as www.omelchenko.as;
+
+    ssl_certificate /etc/letsencrypt/live/omelchenko.as/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/omelchenko.as/privkey.pem;
+
+    set \$root_folder /var/www/vhosts/omelchenko.as;
+    set \$error_folder /usr/share/nginx/html;
+
+    root \$root_folder;
+    recursive_error_pages on;
+    error_page 404 /error-pages/404.html;
+    error_page 500 502 503 504 /error-pages/50x.html;
+
+    location ^~ /error-pages/ {
+        alias \$error_folder/;
+    }
+
+    location ~* \.(png|jpg)\$ {
+        root /;
+        try_files \$root_folder\$uri \$error_folder\$uri =404;
+    }
+
+	location ~ /\. {
+		deny all;
+		return 404;
+	}
+
+    location / {
+        index index.py index.cgi index.html;
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+
+cat <<EOF > /etc/uwsgi.ini
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+set-ph = vhosts_dir=/var/www/vhosts
+
+uid = nginx
+gid = uwsgi
+plugins = cgi
+#http-socket = :9090
+#http-socket-modifier1 = 9
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = %(vhosts_dir)/%n
+cgi = %(vhosts_dir)/%n
+;cgi-allowed-ext = .cgi
+cgi-allowed-ext = .py
+logto = %(log_dir)/%n.log
+EOF
+
+
+touch /etc/uwsgi.d/omelchenko.as.ini
+chown nginx:nginx /etc/uwsgi.d/omelchenko.as.ini
+chmod 644 /etc/uwsgi.d/omelchenko.as.ini
+
+cat <<EOF > /etc/uwsgi.d/omelchenko.as.ini
+[uwsgi]
+set-ph = runtime_dir=/var/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+set-ph = vhosts_dir=/var/www/vhosts
+
+uid = nginx
+gid = uwsgi
+plugins = cgi
+#http-socket = :9090
+#http-socket-modifier1 = 9
+socket = %(runtime_dir)/%n.sock
+chmod-socket = 660
+master = true
+processes = 1
+threads = 1
+chdir = %(vhosts_dir)/%n
+cgi = %(vhosts_dir)/%n
+;cgi-allowed-ext = .cgi
+cgi-allowed-ext = .py
+logto = %(log_dir)/%n.log
+EOF
+
+systemctl enable uwsgi
+systemctl enable nginx
