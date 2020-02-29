@@ -4,10 +4,39 @@ passwd aomelche
 usermod -aG wheel aomelche
 
 timedatectl set-timezone UTC
+localectl set-locale LANG=en_US.utf8
+localectl status
 
+yum list installed
+yum upgrade
+
+yum install sudo
+vi /etc/ssh/sshd_config
+# Protocol 2
+# PermitRootLogin no
+
+yum install iptables-services
+systemctl enable iptables
+systemctl start iptables
+iptables -P INPUT ACCEPT
+iptables -F
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type 8 -j ACCEPT
+iptables -N LOGDROP
+iptables -A LOGDROP -j LOG
+iptables -A LOGDROP -j DROP
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 300 --hitcount 4 -j LOGDROP
+iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set -j ACCEPT
+iptables -P INPUT DROPy
+iptables -P FORWARD DROP
+service iptables save
+
+yum install epel-release
 yum install nginx uwsgi uwsgi-plugin-common certbot git
 
-mkdir /var/www/acme
+mkdir -p /var/www/acme
 chmod 0750 /var/www/acme
 chgrp nginx /var/www/acme
 
@@ -61,6 +90,9 @@ cat <<EOF > /etc/letsencrypt/scripts/post-renewal.sh
 systemctl restart nginx
 EOF
 
+systemctl enable nginx
+systemctl start nginx
+
 certbot certonly --manual --strict-permissions --keep-until-expiring --agree-tos \
  --email aomelche@gmail.com --no-eff-email --rsa-key-size 4096 \
  --manual-public-ip-logging-ok \
@@ -68,11 +100,17 @@ certbot certonly --manual --strict-permissions --keep-until-expiring --agree-tos
  --manual-cleanup-hook /etc/letsencrypt/scripts/auth-clean.sh \
  --cert-name omelchenko.as -d omelchenko.as -d www.omelchenko.as
 
+yum install cronie
+
 cat <<EOF >> ~/crontab.txt
 34 6 * * * certbot renew --post-hook /etc/letsencrypt/scripts/post-renewal.sh 2>&1 >>~/log.txt
 EOF
 
 crontab crontab.txt
+
+groupadd omelchenko.as
+usermod -aG omelchenko.as aomelche
+usermod -aG omelchenko.as nginx
 
 mkdir -p -m 751 /var/www/vhosts
 mkdir -m 750 /var/www/vhosts/omelchenko.as
@@ -115,33 +153,54 @@ server {
 }
 EOF
 
-cat <<EOF > /etc/uwsgi.ini
-[uwsgi]
-set-ph = runtime_dir=/var/run/uwsgi
-set-ph = log_dir=/var/log/uwsgi
-set-ph = vhosts_dir=/var/www/vhosts
+# as aomelche ###########################
+cd /var/www/vhosts/omelchenko.as
+git clone https://github.com/aomelche/omelchenko.as.git .
+find . -mindepth 1 -exec chgrp omelchenko.as {} \;
+find . -mindepth 1 -exec chmod g-w,o-rwx {} \;
 
-uid = nginx
-gid = uwsgi
-plugins = cgi
-#http-socket = :9090
-#http-socket-modifier1 = 9
-socket = %(runtime_dir)/%n.sock
-chmod-socket = 660
-master = true
-processes = 1
-threads = 1
-chdir = %(vhosts_dir)/%n
-cgi = %(vhosts_dir)/%n
-;cgi-allowed-ext = .cgi
-cgi-allowed-ext = .py
-logto = %(log_dir)/%n.log
+cat <<EOF > ~/update-omelchenko.as.sh
+#!/bin/bash
+cd /var/www/vhosts/omelchenko.as
+git pull -q
+find . -mindepth 1 -exec chgrp omelchenko.as {} \;
+find . -mindepth 1 -exec chmod g-w,o-rwx {} \;
 EOF
 
+chmod 700 ~/update-omelchenko.as.sh
+
+cat <<EOF >crontab.txt
+0 6 * * * ~/update-omelchenko.as.sh
+EOF
+
+crontab crontab.txt
+# end as aomelche #######################
+
+cat <<EOF > /etc/uwsgi.ini
+[uwsgi]
+set-ph = user=uwsgi
+set-ph = group=uwsgi
+set-ph = runtime_dir=/run/uwsgi
+set-ph = log_dir=/var/log/uwsgi
+
+master = true
+uid = %(user)
+gid = %(group)
+pidfile = %(runtime_dir)/uwsgi.pid
+emperor = /etc/uwsgi.d
+stats = %(runtime_dir)/stats.sock
+emperor-tyrant = true
+cap = setgid,setuid
+exec-as-root = mkdir -p -m 777 %(log_dir)
+exec-as-root = chown %(user):%(group) %(log_dir)
+EOF
+
+mkdir -m 777 /run/uwsgi
+chown uwsgi:uwsgi /run/uwsgi
 
 touch /etc/uwsgi.d/omelchenko.as.ini
-chown nginx:nginx /etc/uwsgi.d/omelchenko.as.ini
-chmod 644 /etc/uwsgi.d/omelchenko.as.ini
+chown nginx:omelchenko.as /etc/uwsgi.d/omelchenko.as.ini
+chmod 664 /etc/uwsgi.d/omelchenko.as.ini
 
 cat <<EOF > /etc/uwsgi.d/omelchenko.as.ini
 [uwsgi]
@@ -168,3 +227,134 @@ EOF
 
 systemctl enable uwsgi
 systemctl enable nginx
+
+touch /etc/nginx/conf.d/peter-omelchenko.com.conf
+chmod 644 /etc/nginx/conf.d/peter-omelchenko.com.conf
+
+cat <<EOF > /etc/nginx/conf.d/peter-omelchenko.com.conf
+server {
+    listen  80;
+    server_name peter-omelchenko.com www.peter-omelchenko.com;
+
+    include acme.conf;
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+
+EOF
+
+certbot certonly --manual --strict-permissions --keep-until-expiring --agree-tos \
+ --email info@peter-omelchenko.com --no-eff-email --rsa-key-size 4096 \
+ --manual-public-ip-logging-ok \
+ --manual-auth-hook /etc/letsencrypt/scripts/auth-put.sh \
+ --manual-cleanup-hook /etc/letsencrypt/scripts/auth-clean.sh \
+ --cert-name peter-omelchenko.com -d peter-omelchenko.com -d www.peter-omelchenko.com
+
+groupadd peter-omelchenko.com
+usermod -aG peter-omelchenko.com aomelche
+usermod -aG peter-omelchenko.com nginx
+
+mkdir -m 750 /var/www/vhosts/peter-omelchenko.com
+chown aomelche:peter-omelchenko.com /var/www/vhosts/peter-omelchenko.com
+
+cat <<EOF >> /etc/nginx/conf.d/peter-omelchenko.com.conf
+server {
+    listen 443 ssl http2;
+    server_name peter-omelchenko.com www.peter-omelchenko.com;
+
+    ssl_certificate /etc/letsencrypt/live/peter-omelchenko.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/peter-omelchenko.com/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/peter-omelchenko.com/chain.pem;
+
+    set $root_folder /var/www/vhosts/peter-omelchenko.com;
+    set $error_folder /usr/share/nginx/html;
+
+    root $root_folder;
+    recursive_error_pages on;
+    error_page 404 /error-pages/404.html;
+    error_page 500 502 503 504 /error-pages/50x.html;
+
+    location ^~ /error-pages/ {
+        alias $error_folder/;
+    }
+
+    location = /robots.txt {
+        allow all;
+        log_not_found off;
+        access_log off;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires max;
+        log_not_found off;
+    }
+
+    location ~ /\. {
+        deny all;
+        return 404;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_pass unix:/run/php-fpm/www.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location / {
+        index index.php;
+        try_files $uri $uri/ /index.php?$args;
+    }
+}
+EOF
+
+yum install mariadb-server
+systemctl enable mariadb
+systemctl start mariadb
+systemctl status mariadb
+mysql_secure_installation
+
+mysql -u root -p
+#############################
+CREATE DATABASE wordpress CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+GRANT ALL ON wordpress.* TO 'wordpressuser'@'localhost' IDENTIFIED BY 'change-with-strong-password';
+FLUSH PRIVILEGES;
+EXIT;
+#############################
+
+yum install yum-utils
+yum install https://rpms.remirepo.net/enterprise/remi-release-7.rpm
+yum-config-manager --enable remi-php74
+yum update
+yum install php php-cli php-fpm php-mysql php-json php-opcache php-mbstring php-xml php-gd php-curl
+# GPG key:  1ee0 4cce 88a4 ae4a a29a 5df5 004e 6f47 00f9 7f56
+
+vi /etc/php-fpm.d/www.conf
+############################# modify
+user = nginx
+...
+group = nginx
+...
+listen = /run/php-fpm/www.sock
+...
+listen.owner = nginx
+listen.group = nginx
+#############################
+chown -R root:nginx /var/lib/php
+systemctl enable php-fpm
+systemctl start php-fpm
+
+cd /tmp
+wget https://wordpress.org/latest.tar.gz
+tar xf latest.tar.gz
+chown -R aomelche:peter-omelchenko.com wordpress
+chmod -R o-xwr wordpress
+chmod -R g+w wordpress
+#############################
+# add to wp-config.php 
+define('FS_METHOD', 'direct');
+#############################
+
+mv wordpress/* /var/www/vhosts/peter-omelchenko/
